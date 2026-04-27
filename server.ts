@@ -1,0 +1,1028 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import mongoose from "mongoose";
+import path from "path";
+import jwt from "jsonwebtoken";
+
+const JWT_SECRET = process.env.JWT_SECRET || "food-bites-super-secret-key-123";
+
+// Middleware to authenticate JWT
+export const authenticate = (roles: string[] = []) => {
+  return (req: any, res: any, next: any) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: "No authorization header provided" });
+    
+    const token = authHeader.split(" ")[1];
+    if (!token) return res.status(401).json({ error: "No token provided" });
+    
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      if (roles.length > 0 && !roles.includes(decoded.role)) {
+        return res.status(403).json({ error: "Unauthorized access" });
+      }
+      req.user = decoded;
+      next();
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
+  };
+};
+
+// Remove invalid CLOUDINARY_URL if user provided one
+if (process.env.CLOUDINARY_URL && !process.env.CLOUDINARY_URL.startsWith('cloudinary://')) {
+  console.warn("Invalid CLOUDINARY_URL protocol, ignoring it.");
+  delete process.env.CLOUDINARY_URL;
+}
+
+export async function deleteFromCloudinary(url: string) {
+  if (!url || !url.includes('res.cloudinary.com')) return;
+  
+  try {
+    const parts = url.split('/upload/');
+    if (parts.length !== 2) return;
+    
+    const afterUpload = parts[1];
+    const parts2 = afterUpload.split('/');
+    if (parts2[0].startsWith('v') && !isNaN(parseInt(parts2[0].substring(1)))) {
+      parts2.shift();
+    }
+    const publicIdWithExt = parts2.join('/');
+    const lastDotIndex = publicIdWithExt.lastIndexOf('.');
+    const publicId = lastDotIndex !== -1 ? publicIdWithExt.substring(0, lastDotIndex) : publicIdWithExt;
+    
+    if (publicId) {
+      if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+         return; // Silently fail since we just want to delete
+      }
+      const cloudinary = (await import('cloudinary')).v2;
+      cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+      });
+      await cloudinary.uploader.destroy(publicId);
+      console.log(`Deleted old image from Cloudinary: ${publicId}`);
+    }
+  } catch (err) {
+    console.error('Failed to delete old image from Cloudinary:', err);
+  }
+}
+
+// Helper to upload base64 images to Cloudinary
+async function processImagePayload(body: any, fieldName: string) {
+  if (body && body[fieldName] && body[fieldName].startsWith('data:image')) {
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+       console.error('Cloudinary credentials missing. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.');
+       throw new Error('Cloudinary credentials missing in environment.');
+    }
+
+    try {
+      const cloudinary = (await import('cloudinary')).v2;
+      cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+      });
+      
+      const result = await cloudinary.uploader.upload(body[fieldName], {
+        resource_type: 'image',
+      });
+      body[fieldName] = result.secure_url;
+    } catch (err: any) {
+      console.error('Cloudinary upload error:', err);
+      throw new Error(`Image upload failed: ${err.message || 'Unknown error'}`);
+    }
+  }
+}
+
+// Mock Data fallbacks if MongoDB is not provided or connected
+const mockRestaurants = [
+  {
+    _id: "1",
+    name: "Burger Haven",
+    cuisine: "American",
+    rating: 4.8,
+    deliveryTime: "25-35 min",
+    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=800",
+    tags: ["Burgers", "Fast Food", "American"],
+    status: "approved"
+  },
+  {
+    _id: "2",
+    name: "Slice of Italy",
+    cuisine: "Italian",
+    rating: 4.6,
+    deliveryTime: "30-45 min",
+    image: "https://images.unsplash.com/photo-1604382355076-af4b0eb60143?auto=format&fit=crop&q=80&w=800",
+    tags: ["Pizza", "Pasta", "Italian"],
+    status: "approved"
+  },
+  {
+    _id: "3",
+    name: "Green Bowl",
+    cuisine: "Healthy",
+    rating: 4.9,
+    deliveryTime: "15-25 min",
+    image: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&q=80&w=800",
+    tags: ["Salads", "Healthy", "Vegan"],
+    status: "pending"
+  }
+];
+
+let mockMenus: Record<string, any[]> = {
+  "1": [
+    { _id: "m1", restaurantId: "1", name: "Classic Cheeseburger", description: "Beef patty, cheddar, lettuce, tomato, house sauce", price: 12.99, category: "Mains" },
+    { _id: "m2", restaurantId: "1", name: "Crispy Fries", description: "Golden shoestring fries with sea salt", price: 4.99, category: "Sides" },
+    { _id: "m3", restaurantId: "1", name: "Vanilla Shake", description: "Old-fashioned vanilla bean milkshake", price: 5.99, category: "Drinks" }
+  ],
+  "2": [
+    { _id: "m4", restaurantId: "2", name: "Margherita Pizza", description: "San Marzano tomatoes, fresh mozzarella, basil", price: 16.99, category: "Pizza" },
+    { _id: "m5", restaurantId: "2", name: "Garlic Bread", description: "Toasted ciabatta with garlic herb butter", price: 6.99, category: "Starters" },
+    { _id: "m6", restaurantId: "2", name: "Tiramisu", description: "Classic Italian coffee-flavored dessert", price: 8.99, category: "Desserts" }
+  ],
+  "3": [
+    { _id: "m7", restaurantId: "3", name: "Quinoa Power Bowl", description: "Quinoa, roasted sweet potato, kale, avocado", price: 14.99, category: "Bowls" },
+    { _id: "m8", restaurantId: "3", name: "Green Smoothie", description: "Spinach, apple, ginger, lemon, cucumber", price: 7.99, category: "Drinks" }
+  ]
+};
+
+// In-memory stats for SuperAdmin features
+let mockCoupons = [
+  { _id: "c1", code: "BITES50", discount: 50, type: "fixed", active: true },
+  { _id: "c2", code: "10OFF", discount: 10, type: "percentage", active: true }
+];
+let mockSettings = { deliveryCharge: 40, platformFee: 25 };
+
+// In-memory orders for demonstration
+let mockOrders: any[] = [];
+let mockCustomers: any[] = [];
+
+// Mongoose Models (if real DB is connected)
+const restaurantSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  name: String,
+  cuisine: String,
+  rating: Number,
+  deliveryTime: String,
+  image: String,
+  tags: [String],
+  status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'] }
+});
+const Restaurant = mongoose.model('Restaurant', restaurantSchema);
+
+const menuSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  restaurantId: String,
+  name: String,
+  description: String,
+  price: Number,
+  category: String
+});
+const MenuItem = mongoose.model('MenuItem', menuSchema);
+
+const orderSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  items: Array,
+  total: Number,
+  status: { type: String, default: 'Pending' },
+  customerInfo: Object,
+  customerId: String,
+  restaurantId: String,
+  createdAt: { type: Date, default: Date.now }
+});
+const Order = mongoose.model('Order', orderSchema);
+
+const customerSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  name: String,
+  email: { type: String, unique: true },
+  password: String, // In a real app, hash this!
+  phone: String,
+  address: String,
+  addresses: [mongoose.Schema.Types.Mixed],
+  avatar: String,
+  gender: String
+});
+const Customer = mongoose.model('Customer', customerSchema);
+
+const reviewSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  restaurantId: String,
+  customerId: String,
+  customerName: String,
+  orderId: String,
+  rating: Number,
+  comment: String,
+  createdAt: { type: Date, default: Date.now }
+});
+const Review = mongoose.model('Review', reviewSchema);
+
+let mockReviews: any[] = [
+  { _id: "r1", restaurantId: "1", customerName: "Alice S.", orderId: "ord_1", rating: 5, comment: "Best burgers in town!", createdAt: new Date() }
+];
+
+const jobApplicationSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  jobId: Number,
+  jobTitle: String,
+  name: String,
+  email: String,
+  phone: String,
+  currentRole: String,
+  experience: String,
+  qualification: String,
+  createdAt: { type: Date, default: Date.now }
+});
+const JobApplication = mongoose.model('JobApplication', jobApplicationSchema);
+
+let mockApplications: any[] = [];
+
+const jobSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  title: String,
+  type: String,
+  location: String,
+  createdAt: { type: Date, default: Date.now }
+});
+const Job = mongoose.model('Job', jobSchema);
+
+let mockJobs: any[] = [
+  { _id: "1", title: 'Senior Frontend Engineer', type: 'Full-time', location: 'Guwahati / Remote', createdAt: new Date() },
+  { _id: "2", title: 'Delivery Fleet Manager', type: 'Full-time', location: 'Guwahati, Assam', createdAt: new Date() },
+  { _id: "3", title: 'Customer Support Executive', type: 'Full-time', location: 'Remote', createdAt: new Date() },
+  { _id: "4", title: 'Marketing Specialist', type: 'Contract', location: 'Guwahati, Assam', createdAt: new Date() }
+];
+
+// Super Admin Models
+const superAdminSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  email: { type: String, unique: true },
+  password: String
+});
+const SuperAdmin = mongoose.model('SuperAdmin', superAdminSchema);
+
+const couponSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  code: { type: String, unique: true },
+  discount: Number,
+  type: { type: String, enum: ['fixed', 'percentage'] },
+  active: { type: Boolean, default: true }
+});
+const Coupon = mongoose.model('Coupon', couponSchema);
+
+const settingsSchema = new mongoose.Schema({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  deliveryCharge: { type: Number, default: 40 },
+  platformFee: { type: Number, default: 25 }
+});
+const Settings = mongoose.model('Settings', settingsSchema);
+
+let isDbConnected = false;
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+  const MONGODB_URI = process.env.MONGODB_URI;
+
+  if (MONGODB_URI) {
+    try {
+      await mongoose.connect(MONGODB_URI);
+      console.log('Connected to MongoDB successfully.');
+      isDbConnected = true;
+      
+      // Bootstrap DB with mock restaurants if empty
+      const count = await Restaurant.countDocuments();
+      if (count === 0) {
+        await Restaurant.insertMany(mockRestaurants);
+        // Also insert menus
+        for (const rId of Object.keys(mockMenus)) {
+          await MenuItem.insertMany(mockMenus[rId]);
+        }
+      }
+
+      // Ensure at least one super admin exists
+      const adminCount = await SuperAdmin.countDocuments();
+      if (adminCount === 0) {
+        await SuperAdmin.create({ email: 'superadmin@foodbites.com', password: 'superadmin123' });
+      }
+
+      const settingsCount = await Settings.countDocuments();
+      if (settingsCount === 0) {
+        await Settings.create(mockSettings);
+      }
+      
+      const couponCount = await Coupon.countDocuments();
+      if (couponCount === 0) {
+        await Coupon.insertMany(mockCoupons);
+      }
+
+    } catch (error) {
+      console.error('MongoDB connection error, falling back to mock data:', error);
+    }
+  } else {
+    console.log('No MONGODB_URI provided. Running with mock in-memory data.');
+  }
+
+  // --- API Routes ---
+
+  // Applications Routes
+  app.post("/api/applications", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const app = new JobApplication(req.body);
+        await app.save();
+        return res.json({ success: true });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to submit application" });
+      }
+    }
+    const newApp = { _id: "app_" + Date.now(), ...req.body, createdAt: new Date() };
+    mockApplications.push(newApp);
+    res.json({ success: true });
+  });
+
+  app.get("/api/superadmin/applications", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const apps = await JobApplication.find().sort({ createdAt: -1 });
+        return res.json(apps);
+      } catch (err) { }
+    }
+    res.json([...mockApplications].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+  });
+
+  app.delete("/api/superadmin/applications/:id", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        await JobApplication.findByIdAndDelete(req.params.id);
+        return res.json({ success: true });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to delete application" });
+      }
+    }
+    mockApplications = mockApplications.filter(a => a._id !== req.params.id);
+    res.json({ success: true });
+  });
+
+  app.get("/api/jobs", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const jobs = await Job.find().sort({ createdAt: -1 });
+        return res.json(jobs);
+      } catch (err) { }
+    }
+    res.json([...mockJobs].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+  });
+
+  app.post("/api/superadmin/jobs", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const job = new Job(req.body);
+        await job.save();
+        return res.json({ success: true, job });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to post job" });
+      }
+    }
+    const newJob = { _id: "job_" + Date.now(), ...req.body, createdAt: new Date() };
+    mockJobs.push(newJob);
+    res.json({ success: true, job: newJob });
+  });
+
+  app.delete("/api/superadmin/jobs/:id", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        await Job.findByIdAndDelete(req.params.id);
+        return res.json({ success: true });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to delete job" });
+      }
+    }
+    mockJobs = mockJobs.filter(j => j._id !== req.params.id);
+    res.json({ success: true });
+  });
+
+  // Search Route
+  app.get("/api/search", async (req, res) => {
+    const q = req.query.q as string || "";
+    const lowerQ = q.toLowerCase();
+    
+    let matchedRestaurants = [];
+    let matchedItems = [];
+
+    if (isDbConnected) {
+      try {
+        matchedRestaurants = await Restaurant.find({ 
+          status: 'approved',
+          $or: [
+            { name: { $regex: q, $options: 'i' } },
+            { cuisine: { $regex: q, $options: 'i' } },
+            { tags: { $regex: q, $options: 'i' } }
+          ]
+        });
+        matchedItems = await MenuItem.find({
+          $or: [
+            { name: { $regex: q, $options: 'i' } },
+            { description: { $regex: q, $options: 'i' } }
+          ]
+        });
+      } catch (err) { }
+    } else {
+      matchedRestaurants = mockRestaurants.filter(r => 
+        r.status === 'approved' && 
+        (r.name.toLowerCase().includes(lowerQ) || 
+         r.cuisine.toLowerCase().includes(lowerQ) || 
+         r.tags.some((t: string) => t.toLowerCase().includes(lowerQ)))
+      );
+      
+      const allItems = Object.values(mockMenus).flat();
+      matchedItems = allItems.filter(i => 
+        i.name.toLowerCase().includes(lowerQ) || 
+        i.description.toLowerCase().includes(lowerQ)
+      );
+    }
+    
+    res.json({ restaurants: matchedRestaurants, items: matchedItems });
+  });
+
+  // Reviews Routes
+  app.get("/api/restaurants/:id/reviews", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const reviews = await Review.find({ restaurantId: req.params.id }).sort({ createdAt: -1 });
+        return res.json(reviews);
+      } catch (err) {}
+    }
+    const reviews = mockReviews.filter(r => r.restaurantId === req.params.id).sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    res.json(reviews);
+  });
+
+  app.post("/api/reviews", async (req, res) => {
+    const reviewData = req.body;
+    if (isDbConnected) {
+      try {
+        // Simple logic to add a review, could check order validation
+        const existingReview = await Review.findOne({ orderId: reviewData.orderId });
+        if (existingReview) return res.status(400).json({ error: "Already reviewed this order" });
+        
+        const newReview = new Review(reviewData);
+        await newReview.save();
+        return res.json({ success: true, review: newReview });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to post review" });
+      }
+    }
+    
+    const existingReview = mockReviews.find(r => r.orderId === reviewData.orderId);
+    if (existingReview) return res.status(400).json({ error: "Already reviewed this order" });
+    
+    const newReview = { _id: "rev_" + Date.now(), ...reviewData, createdAt: new Date() };
+    mockReviews.push(newReview);
+    res.json({ success: true, review: newReview });
+  });
+
+  // Auth Routes
+  app.post('/api/auth/admin/login', (req, res) => {
+    // Dummy admin login for Restaurant Admin
+    const { email, password } = req.body;
+    if (email && password) {
+      // Just accept any login for demo
+      const restaurantId = isDbConnected ? null : "1";
+      const token = jwt.sign({ id: "admin1", role: "admin", restaurantId }, JWT_SECRET, { expiresIn: '1d' });
+      return res.json({ success: true, token, restaurantId }); 
+    }
+    res.status(401).json({ error: 'Invalid credentials' });
+  });
+
+  // Super Admin Login Route - Server-side only check
+  app.post('/api/superadmin/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (isDbConnected) {
+      const admin = await SuperAdmin.findOne({ email, password });
+      if (admin) {
+        const token = jwt.sign({ id: admin._id, role: "superadmin" }, JWT_SECRET, { expiresIn: '1d' });
+        return res.json({ success: true, token });
+      }
+      return res.status(401).json({ error: 'Invalid super admin credentials' });
+    } else {
+      // Fallback for mock environment
+      if (email === 'superadmin@foodbites.com' && password === 'superadmin123') {
+        const token = jwt.sign({ id: "superadmin", role: "superadmin" }, JWT_SECRET, { expiresIn: '1d' });
+        return res.json({ success: true, token });
+      }
+      return res.status(401).json({ error: 'Invalid super admin credentials' });
+    }
+  });
+
+  app.post('/api/customers/register', async (req, res) => {
+    try {
+      if (isDbConnected) {
+        const newCustomer = new Customer(req.body);
+        await newCustomer.save();
+        const token = jwt.sign({ id: newCustomer._id, role: "customer" }, JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ success: true, customer: newCustomer, token });
+      } else {
+        const newCust = { _id: "cust_" + Date.now(), ...req.body };
+        mockCustomers.push(newCust);
+        const token = jwt.sign({ id: newCust._id, role: "customer" }, JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ success: true, customer: newCust, token });
+      }
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/customers/login', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+      if (isDbConnected) {
+        const customer = await Customer.findOne({ email, password });
+        if (customer) {
+          const token = jwt.sign({ id: customer._id, role: "customer" }, JWT_SECRET, { expiresIn: '7d' });
+          return res.json({ success: true, customer, token });
+        }
+      } else {
+        const customer = mockCustomers.find(c => c.email === email && c.password === password);
+        if (customer) {
+          const token = jwt.sign({ id: customer._id, role: "customer" }, JWT_SECRET, { expiresIn: '7d' });
+          return res.json({ success: true, customer, token });
+        }
+      }
+      res.status(401).json({ error: 'Invalid email or password' });
+    } catch (err) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Protect superadmin routes
+  app.use('/api/superadmin', (req, res, next) => {
+    if (req.path === '/login') return next();
+    if (req.path === '/settings' && req.method === 'GET') return next();
+    return authenticate(['superadmin'])(req, res, next);
+  });
+
+  // Protect admin routes
+  app.use('/api/admin', authenticate(['admin', 'superadmin']));
+
+  app.put('/api/customers/:id', async (req, res) => {
+    try {
+      const curId = req.params.id;
+      if (req.body.avatar && req.body.avatar.startsWith('data:image')) {
+        if (isDbConnected) {
+          const oldCustomer = await Customer.findById(curId);
+          if (oldCustomer && oldCustomer.avatar) await deleteFromCloudinary(oldCustomer.avatar);
+        } else {
+          const oldCustomer = mockCustomers.find(c => c._id === curId);
+          if (oldCustomer && oldCustomer.avatar) await deleteFromCloudinary(oldCustomer.avatar);
+        }
+      }
+      await processImagePayload(req.body, 'avatar');
+      const { name, phone, address, addresses, avatar, gender } = req.body;
+      if (isDbConnected) {
+        const customer = await Customer.findByIdAndUpdate(curId, { name, phone, address, addresses, avatar, gender }, { new: true });
+        if (customer) return res.json({ success: true, customer });
+      } else {
+        const customerIndex = mockCustomers.findIndex(c => c._id === curId);
+        if (customerIndex > -1) {
+          mockCustomers[customerIndex] = { ...mockCustomers[customerIndex], name, phone, address, addresses, avatar, gender };
+          return res.json({ success: true, customer: mockCustomers[customerIndex] });
+        }
+      }
+      res.status(404).json({ error: 'Customer not found' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Server error' });
+    }
+  });
+
+  app.get('/api/customers/:id/orders', async (req, res) => {
+    try {
+      if (isDbConnected) {
+        const orders = await Order.find({ "customerId": req.params.id }).populate('restaurantId') || [];
+        return res.json(orders);
+      }
+      res.json([]);
+    } catch (err) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Get all restaurants for superadmin
+  app.get("/api/restaurants/all", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const restaurants = await Restaurant.find();
+        return res.json(restaurants.length > 0 ? restaurants : mockRestaurants);
+      } catch (err) {
+        return res.status(500).json({ error: "Database error" });
+      }
+    }
+    res.json(mockRestaurants);
+  });
+
+  // Get approved restaurants (for customers)
+  app.get("/api/restaurants", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        // Find approved, or if we just added this field gracefully fallback to handling ones where status is missing as approved possibly. But let's assume 'approved' is standard or missing defaults to pending.
+        const restaurants = await Restaurant.find({ status: { $ne: 'rejected' } }); 
+        // to simplify, we can just return all for customers unless they are rejected or pending, 
+        // but wait, earlier we returned all. Let's only return approved.
+        const approved = await Restaurant.find({ status: 'approved' });
+        return res.json(approved.length > 0 ? approved : mockRestaurants.filter(r => r.status === 'approved'));
+      } catch (err) {
+         return res.status(500).json({ error: "Database error" });
+      }
+    }
+    res.json(mockRestaurants.filter(r => r.status === 'approved'));
+  });
+
+  // Get restaurant by ID
+  app.get("/api/restaurants/:id", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const restaurant = await Restaurant.findById(req.params.id);
+        if (restaurant) return res.json(restaurant);
+      } catch (err) {}
+    }
+    const restaurant = mockRestaurants.find(r => r._id === req.params.id);
+    if (!restaurant) return res.status(404).json({ error: "Restaurant not found" });
+    res.json(restaurant);
+  });
+
+  // Update restaurant status (SuperAdmin)
+  app.patch("/api/superadmin/restaurants/:id/status", async (req, res) => {
+    const { status } = req.body;
+    if (isDbConnected) {
+      try {
+        const restaurant = await Restaurant.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        return res.json({ success: true, restaurant });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to update restaurant status" });
+      }
+    }
+    const restaurant = mockRestaurants.find(r => r._id === req.params.id);
+    if (restaurant) {
+      restaurant.status = status;
+      return res.json({ success: true, restaurant });
+    }
+    res.status(404).json({ error: "Restaurant not found" });
+  });
+
+  // SuperAdmin Options (Settings & Coupons)
+  app.get("/api/superadmin/settings", async (req, res) => {
+    if (isDbConnected) {
+      const settings = await Settings.findOne();
+      return res.json(settings || mockSettings);
+    }
+    res.json(mockSettings);
+  });
+
+  app.put("/api/superadmin/settings", async (req, res) => {
+    if (isDbConnected) {
+      let settings = await Settings.findOne();
+      if (settings) {
+        settings.deliveryCharge = req.body.deliveryCharge;
+        settings.platformFee = req.body.platformFee;
+        await settings.save();
+      } else {
+        settings = await Settings.create(req.body);
+      }
+      return res.json({ success: true, settings });
+    }
+    mockSettings = { ...mockSettings, ...req.body };
+    res.json({ success: true, settings: mockSettings });
+  });
+
+  app.get("/api/superadmin/coupons", async (req, res) => {
+    if (isDbConnected) {
+      const coupons = await Coupon.find();
+      return res.json(coupons);
+    }
+    res.json(mockCoupons);
+  });
+
+  app.post("/api/superadmin/coupons", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const coupon = await Coupon.create(req.body);
+        return res.json({ success: true, coupon });
+      } catch (error: any) {
+        if (error.code === 11000) {
+          return res.status(400).json({ error: "Coupon code already exists." });
+        }
+        return res.status(500).json({ error: "Failed to create coupon." });
+      }
+    }
+    
+    // Check if code already exists in mock data
+    const exists = mockCoupons.some(c => c.code === req.body.code);
+    if (exists) {
+      return res.status(400).json({ error: "Coupon code already exists." });
+    }
+    
+    const coupon = { _id: "c_" + Date.now(), active: true, ...req.body };
+    mockCoupons.push(coupon);
+    res.json({ success: true, coupon });
+  });
+  
+  app.delete("/api/superadmin/coupons/:id", async (req, res) => {
+    if (isDbConnected) {
+      await Coupon.findByIdAndDelete(req.params.id);
+      return res.json({ success: true });
+    }
+    mockCoupons = mockCoupons.filter(c => c._id !== req.params.id);
+    res.json({ success: true });
+  });
+
+  // Validate coupon
+  app.post("/api/coupons/validate", async (req, res) => {
+    const { code } = req.body;
+    if (isDbConnected) {
+      const coupon = await Coupon.findOne({ code: code.toUpperCase(), active: true });
+      if (coupon) return res.json({ success: true, coupon });
+      return res.json({ success: false, error: "Invalid coupon" });
+    }
+    const coupon = mockCoupons.find(c => c.code === code.toUpperCase() && c.active);
+    if (coupon) return res.json({ success: true, coupon });
+    res.json({ success: false, error: "Invalid coupon" });
+  });
+
+  // Get menu for a restaurant
+  app.get("/api/restaurants/:id/menu", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const menu = await MenuItem.find({ restaurantId: req.params.id });
+        if (menu.length > 0) return res.json(menu);
+      } catch (err) {}
+    }
+    res.json(mockMenus[req.params.id] || []);
+  });
+
+  // Create an order
+  app.post("/api/orders", async (req, res) => {
+    const orderData = req.body;
+    // Basic assignment of restaurantId from the first item
+    const restaurantId = orderData.items[0]?.restaurantId || "1"; 
+    
+    if (isDbConnected) {
+      try {
+        const newOrder = new Order({ ...orderData, restaurantId });
+        await newOrder.save();
+        return res.json({ success: true, order: newOrder });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to place order" });
+      }
+    }
+    const newOrder = { _id: "ord_" + Math.random().toString(36).substr(2, 9), ...orderData, restaurantId, status: 'Pending', createdAt: new Date() };
+    mockOrders.push(newOrder);
+    res.json({ success: true, order: newOrder });
+  });
+
+  // Get order by ID (for tracking)
+  app.get("/api/orders/:id", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const order = await Order.findById(req.params.id);
+        if (order) return res.json(order);
+      } catch (err) {}
+    }
+    const order = mockOrders.find(o => o._id === req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    res.json(order);
+  });
+
+  // Admin Routes
+  app.get('/api/db-test', (req, res) => {
+    res.json({ connected: isDbConnected, uriSet: !!MONGODB_URI });
+  });
+
+  app.get('/api/admin/orders', async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const orders = await Order.find().sort({ createdAt: -1 });
+        return res.json(orders);
+      } catch (err) {
+        return res.status(500).json({ error: "Database error" });
+      }
+    }
+    res.json(mockOrders.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+  });
+
+  app.get('/api/admin/menu', async (req, res) => {
+    const restId = req.query.restaurantId as string || "1";
+    if (isDbConnected) {
+      try {
+        const items = await MenuItem.find({ restaurantId: restId });
+        return res.json(items);
+      } catch(err) {
+        return res.status(500).json({ error: "Failed to fetch menu" });
+      }
+    }
+    res.json(mockMenus[restId] || []);
+  });
+
+  app.get('/api/admin/customers', async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const customers = await Customer.find().sort({ _id: -1 });
+        return res.json(customers);
+      } catch (err) {
+        return res.status(500).json({ error: "Database error" });
+      }
+    }
+    res.json(mockCustomers.slice().reverse());
+  });
+
+  app.patch('/api/admin/orders/:id/status', async (req, res) => {
+    const { status } = req.body;
+    if (isDbConnected) {
+      try {
+        const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        return res.json({ success: true, order });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to update order" });
+      }
+    }
+    
+    const order = mockOrders.find(o => o._id === req.params.id);
+    if (order) {
+      order.status = status;
+      return res.json({ success: true, order });
+    }
+    res.status(404).json({ error: "Order not found" });
+  });
+
+  app.post('/api/admin/menu', async (req, res) => {
+    try {
+      await processImagePayload(req.body, 'image');
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+    let itemData = req.body;
+    if (isDbConnected) {
+      try {
+        // Find first restaurant if not provided
+        let restId = itemData.restaurantId;
+        if (!restId) {
+           const rest = await Restaurant.findOne();
+           restId = rest ? rest._id : null;
+        }
+        const newItem = new MenuItem({ ...itemData, restaurantId: restId });
+        await newItem.save();
+        return res.json({ success: true, item: newItem });
+      } catch (err) {
+         return res.status(500).json({ error: "Failed to add item" });
+      }
+    }
+
+    const restId = itemData.restaurantId || "1";
+    const newItem = { _id: "m_" + Date.now(), ...itemData, restaurantId: restId };
+    if (!mockMenus[restId]) mockMenus[restId] = [];
+    mockMenus[restId].push(newItem);
+    res.json({ success: true, item: newItem });
+  });
+
+  app.put('/api/admin/menu/:id', async (req, res) => {
+    if (req.body.image && req.body.image.startsWith('data:image')) {
+      if (isDbConnected) {
+        const oldItem = await MenuItem.findById(req.params.id);
+        if (oldItem && oldItem.image) await deleteFromCloudinary(oldItem.image);
+      } else {
+        // Find inside mockMenus
+        for (const restId in mockMenus) {
+          const item = mockMenus[restId].find(m => m._id === req.params.id);
+          if (item && item.image) {
+            await deleteFromCloudinary(item.image);
+            break;
+          }
+        }
+      }
+    }
+    
+    try {
+      await processImagePayload(req.body, 'image');
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+    let itemData = req.body;
+    if (isDbConnected) {
+      try {
+        const updatedItem = await MenuItem.findByIdAndUpdate(req.params.id, itemData, { new: true });
+        return res.json({ success: true, item: updatedItem });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to update item" });
+      }
+    }
+
+    let foundItem = null;
+    for (const restId in mockMenus) {
+      const idx = mockMenus[restId].findIndex(m => m._id === req.params.id);
+      if (idx !== -1) {
+        mockMenus[restId][idx] = { ...mockMenus[restId][idx], ...itemData };
+        foundItem = mockMenus[restId][idx];
+        break;
+      }
+    }
+    if (foundItem) {
+      res.json({ success: true, item: foundItem });
+    } else {
+      res.status(404).json({ error: "Item not found" });
+    }
+  });
+
+  app.put('/api/admin/restaurants/:id', async (req, res) => {
+    if (req.body.image && req.body.image.startsWith('data:image')) {
+      if (isDbConnected) {
+        const oldRest = await Restaurant.findById(req.params.id);
+        if (oldRest && oldRest.image) await deleteFromCloudinary(oldRest.image);
+      } else {
+        const oldRest = mockRestaurants.find(r => r._id === req.params.id);
+        if (oldRest && oldRest.image) await deleteFromCloudinary(oldRest.image);
+      }
+    }
+    
+    try {
+      await processImagePayload(req.body, 'image');
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+    if (isDbConnected) {
+      try {
+        const updatedRest = await Restaurant.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        return res.json({ success: true, restaurant: updatedRest });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to update restaurant profile" });
+      }
+    }
+    const idx = mockRestaurants.findIndex(r => r._id === req.params.id);
+    if (idx !== -1) {
+      mockRestaurants[idx] = { ...mockRestaurants[idx], ...req.body };
+      return res.json({ success: true, restaurant: mockRestaurants[idx] });
+    }
+    res.status(404).json({ error: "Restaurant not found" });
+  });
+
+  app.delete('/api/admin/menu/:id', async (req, res) => {
+    if (isDbConnected) {
+      try {
+        await MenuItem.findByIdAndDelete(req.params.id);
+        return res.json({ success: true });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to delete item" });
+      }
+    }
+    
+    // Mock delete
+    for (const key of Object.keys(mockMenus)) {
+      mockMenus[key] = mockMenus[key].filter(i => i._id !== req.params.id);
+    }
+    res.json({ success: true });
+  });
+
+  // Get Admin Stats (SuperAdmin also uses this or a broader one)
+  app.get('/api/admin/stats', async (req, res) => {
+    let orders = [];
+    if (isDbConnected) {
+      orders = await Order.find();
+    } else {
+      orders = mockOrders;
+    }
+    
+    const totalRevenue = orders.reduce((sum, order) => sum + (order.total || 0), 0);
+    const totalOrders = orders.length;
+    const pendingOrders = orders.filter(o => o.status === 'Pending').length;
+    const completedOrders = orders.filter(o => o.status === 'Delivered').length;
+    
+    res.json({
+      totalRevenue,
+      totalOrders,
+      pendingOrders,
+      completedOrders
+    });
+  });
+
+  // --- Vite / Static Serve ---
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();

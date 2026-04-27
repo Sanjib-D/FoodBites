@@ -1,0 +1,145 @@
+import React, { useState } from 'react';
+import { LayoutDashboard, ClipboardList, UtensilsCrossed, BarChart3, Users, Bell, LogOut, X } from 'lucide-react';
+import { Link, useNavigate, Routes, Route, useLocation } from 'react-router-dom';
+
+import { DashboardOverview } from './DashboardOverview';
+import { LiveOrders } from './LiveOrders';
+import { MenuManagement } from './MenuManagement';
+import { Analytics } from './Analytics';
+import { Customers } from './Customers';
+import { RestaurantProfile } from './RestaurantProfile';
+import { Store } from 'lucide-react';
+
+export function AdminDashboard() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [imgError, setImgError] = useState(false);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('restaurantId');
+    navigate('/admin/login');
+  };
+
+  const currentPath = location.pathname;
+
+  const NavItem = ({ to, icon: Icon, label }: { to: string, icon: any, label: string }) => {
+    const isActive = currentPath === to;
+    return (
+      <Link 
+        to={to} 
+        className={`flex items-center px-4 py-3 rounded-lg transition-colors ${isActive ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+      >
+        <Icon className="w-5 h-5 mr-3" />
+        {label}
+      </Link>
+    );
+  };
+
+  const notifications = [
+    { id: 1, text: "New order #FB-1093 received", time: "2 min ago" },
+    { id: 2, text: "Sarah Jenkins completed order #FB-1089", time: "15 min ago" },
+    { id: 3, text: "Truffle Pasta inventory running low", time: "1 hour ago" },
+  ];
+
+  return (
+    <div className="w-full h-screen bg-slate-50 text-slate-900 flex overflow-hidden font-sans">
+      {/* Sidebar Navigation */}
+      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shrink-0">
+        <div className="p-6 flex items-center gap-3">
+          {!imgError ? (
+            <img 
+              src="/logo_white.png" 
+              alt="Food Bites" 
+              className="h-10 w-auto object-contain transition-transform hover:scale-105" 
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <div className="w-10 h-10 bg-brand-500 rounded-lg flex items-center justify-center text-white font-bold text-xl">FB</div>
+          )}
+          <span className="text-xl font-bold text-white tracking-tight">Food Bites</span>
+        </div>
+        <nav className="flex-1 px-4 py-4 space-y-1">
+          <NavItem to="/admin/dashboard" icon={LayoutDashboard} label="Dashboard" />
+          <NavItem to="/admin/dashboard/orders" icon={ClipboardList} label="Live Orders" />
+          <NavItem to="/admin/dashboard/menu" icon={UtensilsCrossed} label="Menu Management" />
+          <NavItem to="/admin/dashboard/profile" icon={Store} label="Restaurant Profile" />
+          <NavItem to="/admin/dashboard/analytics" icon={BarChart3} label="Analytics" />
+          <NavItem to="/admin/dashboard/customers" icon={Users} label="Customers" />
+        </nav>
+        <div className="p-4 border-t border-slate-800">
+          <div className="flex items-center gap-3 p-2 bg-slate-800 rounded-lg group cursor-pointer" onClick={handleLogout}>
+            <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white">
+                AM
+            </div>
+            <div className="flex-1">
+              <p className="text-white font-medium text-xs">Alex Manager</p>
+              <p className="opacity-50 text-xs">Admin Panel</p>
+            </div>
+            <LogOut className="w-4 h-4 text-slate-400 group-hover:text-white" />
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+        {/* Header */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 relative z-20">
+          <h2 className="text-xl font-bold text-slate-800">Management Dashboard</h2>
+          <div className="flex items-center gap-4 relative">
+            <Link to="/" className="text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-2">
+              &larr; Back to Website
+            </Link>
+            <div className="w-px h-6 bg-slate-200"></div>
+            <button 
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="relative p-2 hover:bg-slate-100 rounded-full transition-colors"
+            >
+              <span className="absolute top-1 right-2 w-2 h-2 bg-red-500 border border-white rounded-full"></span>
+              <Bell className="w-5 h-5 text-slate-400" />
+            </button>
+            
+            {showNotifications && (
+              <div className="absolute top-full right-24 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
+                <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+                  <h3 className="font-bold text-slate-800">Notifications</h3>
+                  <button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-slate-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                  {notifications.map(n => (
+                    <div key={n.id} className="p-4 hover:bg-slate-50 transition-colors cursor-pointer">
+                      <p className="text-sm text-slate-800 font-medium mb-1">{n.text}</p>
+                      <p className="text-xs text-slate-500">{n.time}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-3 border-t border-slate-100 text-center">
+                  <button className="text-sm text-brand-500 font-medium hover:text-brand-600">Mark all as read</button>
+                </div>
+              </div>
+            )}
+
+            <Link to="/admin/dashboard/menu" className="px-4 py-2 bg-brand-500 hover:bg-brand-600 transition-colors text-white rounded-lg font-medium text-sm inline-flex">
+              Add New Menu Item
+            </Link>
+          </div>
+        </header>
+
+        {/* Content View */}
+        <div className="p-8 flex-1 overflow-y-auto bg-slate-50 relative z-10">
+          <Routes>
+            <Route index element={<DashboardOverview />} />
+            <Route path="orders" element={<LiveOrders />} />
+            <Route path="menu" element={<MenuManagement />} />
+            <Route path="profile" element={<RestaurantProfile />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="customers" element={<Customers />} />
+          </Routes>
+        </div>
+      </main>
+    </div>
+  );
+}
