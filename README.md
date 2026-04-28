@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=2070&auto=format&fit=crop" alt="FoodBites Banner" width="100%" height="300" style="object-fit: cover; border-radius: 12px;"/>
+ 
 
   <h1>🍔 FoodBites</h1>
   <p><strong>A Modern, Full-Stack Food Delivery & Management Platform</strong></p>
