@@ -3,7 +3,8 @@ import { Camera, Save } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
 
 export function RestaurantProfile() {
-  const { data: restaurant, loading } = useApi<any>('/api/restaurants/1'); // Using 1 as mock ID for now
+  const restId = localStorage.getItem('restaurantId') || '1';
+  const { data: restaurant, loading } = useApi<any>(`/api/restaurants/${restId}`);
   const [formData, setFormData] = useState<any>({
     name: '',
     cuisine: '',
@@ -34,10 +35,16 @@ export function RestaurantProfile() {
     setSaving(true);
     try {
       const restId = restaurant?._id || '1';
-      const updatedData = { ...formData, tags: formData.tags.split(',').map((t: string) => t.trim()).filter(Boolean) };
+      const tagsArray = typeof formData.tags === 'string' 
+        ? formData.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
+        : Array.isArray(formData.tags) ? formData.tags : [];
+      const updatedData = { ...formData, tags: tagsArray };
       await fetch(`/api/admin/restaurants/${restId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: JSON.stringify(updatedData)
       });
       setSaveMessage('Profile successfully updated!');

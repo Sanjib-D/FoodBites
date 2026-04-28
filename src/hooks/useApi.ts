@@ -10,7 +10,11 @@ export function useApi<T>(url: string) {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const res = await fetch(url);
+        const token = localStorage.getItem('token');
+        const headers: any = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        
+        const res = await fetch(url, { headers });
         if (!res.ok) throw new Error('Failed to fetch');
         const json = await res.json();
         if (isMounted) {

@@ -26,6 +26,7 @@ export function Checkout() {
   // Fixed charges
   const [deliveryCharge, setDeliveryCharge] = useState(40);
   const [serviceCharge, setServiceCharge] = useState(25);
+  const [taxRate, setTaxRate] = useState(5);
 
   useEffect(() => {
     // Fetch settings for charges
@@ -34,6 +35,7 @@ export function Checkout() {
       .then(data => {
         if (data.deliveryCharge !== undefined) setDeliveryCharge(data.deliveryCharge);
         if (data.platformFee !== undefined) setServiceCharge(data.platformFee);
+        if (data.taxRate !== undefined) setTaxRate(data.taxRate);
       })
       .catch(err => console.error("Could not fetch settings", err));
   }, []);
@@ -68,7 +70,8 @@ export function Checkout() {
       discountAmount = appliedCoupon.discount;
     }
   }
-  const finalTotal = subtotal + deliveryCharge + serviceCharge - discountAmount;
+  const taxAmount = Math.max(0, (subtotal - discountAmount) * (taxRate / 100));
+  const finalTotal = subtotal + deliveryCharge + serviceCharge + taxAmount - discountAmount;
 
   const handleApplyCoupon = async () => {
     if (!couponCode) return;
@@ -121,10 +124,18 @@ export function Checkout() {
     try {
       const res = await fetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: JSON.stringify({
           items,
           total: finalTotal, // Use calculated final total
+          subtotal,
+          deliveryCharge,
+          platformFee: serviceCharge,
+          tax: taxAmount,
+          discount: appliedCoupon ? discountAmount : 0,
           customerInfo: { ...formData, address: finalAddress },
           paymentMethod,
           customerId: customer?._id || null
@@ -326,10 +337,10 @@ export function Checkout() {
                       </div>
                       <div>
                         <p className="font-medium text-slate-800 pr-2 line-clamp-2 leading-tight">{item.name}</p>
-                        <p className="text-xs text-slate-500 mt-1">₹{item.price.toFixed(2)} each</p>
+                        <p className="text-xs text-slate-500 mt-1">₹{Number(item.price || 0).toFixed(2)} each</p>
                       </div>
                     </div>
-                    <span className="font-bold text-slate-900 shrink-0">₹{(item.price * item.quantity).toFixed(2)}</span>
+                    <span className="font-bold text-slate-900 shrink-0">₹{(Number(item.price || 0) * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -381,6 +392,10 @@ export function Checkout() {
                 <div className="flex justify-between text-sm text-slate-600">
                   <span>Platform Fee</span>
                   <span className="font-medium text-slate-900">₹{serviceCharge.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-slate-600">
+                  <span>Taxes ({taxRate}%)</span>
+                  <span className="font-medium text-slate-900">₹{taxAmount.toFixed(2)}</span>
                 </div>
               </div>
 

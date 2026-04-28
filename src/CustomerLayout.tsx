@@ -9,6 +9,7 @@ import { Checkout } from './pages/Checkout';
 import { OrderTracker } from './pages/OrderTracker';
 import { CustomerLogin } from './pages/CustomerLogin';
 import { AdminLogin } from './pages/admin/AdminLogin';
+import { AdminRegister } from './pages/admin/AdminRegister';
 import { AuthProvider } from './context/AuthContext';
 
 import { AboutUs } from './pages/AboutUs';
@@ -46,6 +47,7 @@ export function CustomerLayout() {
             <Route path="/addresses" element={<Addresses />} />
             <Route path="/orders" element={<OrderHistory />} />
             <Route path="/admin/login" element={<AdminLogin />} />
+            <Route path="/admin/register" element={<AdminRegister />} />
             <Route path="/about" element={<AboutUs />} />
             <Route path="/careers" element={<Careers />} />
             <Route path="/help" element={<HelpCenter />} />

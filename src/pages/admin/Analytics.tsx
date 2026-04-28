@@ -7,7 +7,9 @@ export function Analytics() {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const res = await fetch('/api/admin/orders');
+        const res = await fetch('/api/admin/orders', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
         const orders = await res.json();
         
         // Very basic mock analytics logic over "days" based on creating fake chart data

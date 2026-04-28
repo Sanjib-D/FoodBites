@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingBag, LogOut, User, UtensilsCrossed } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
@@ -11,8 +11,14 @@ interface NavbarProps {
 export function Navbar({ onOpenCart }: NavbarProps) {
   const { items } = useCart();
   const { customer, logout } = useAuth();
+  const navigate = useNavigate();
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const [imgError, setImgError] = useState(false);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   return (
     <nav className="sticky top-0 z-40 w-full bg-slate-900 border-b border-slate-800 shadow-sm text-slate-300">
@@ -54,13 +60,13 @@ export function Navbar({ onOpenCart }: NavbarProps) {
                     <Link to="/orders" className="block px-4 py-2 hover:bg-slate-50 transition-colors text-sm">Order History</Link>
                   </div>
                 </div>
-                <button onClick={logout} className="text-sm opacity-80 hover:text-red-500 transition-colors" title="Logout">
+                <button onClick={handleLogout} className="text-sm opacity-80 hover:text-red-500 transition-colors" title="Logout">
                   <LogOut className="w-4 h-4" />
                 </button>
               </div>
             ) : (
-              <Link to="/login" className="text-sm font-medium opacity-80 hover:opacity-100 transition-opacity">
-                 Login
+              <Link to="/login" className="text-sm font-medium px-4 py-2 rounded-lg border border-transparent hover:border-slate-700 hover:bg-slate-800 transition-all opacity-90 hover:opacity-100">
+                 Login / Sign up
               </Link>
             )}
             

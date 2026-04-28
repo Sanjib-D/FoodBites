@@ -125,7 +125,9 @@ const mockRestaurants = [
     deliveryTime: "15-25 min",
     image: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&q=80&w=800",
     tags: ["Salads", "Healthy", "Vegan"],
-    status: "pending"
+    status: "pending",
+    email: "admin3@example.com",
+    password: "password123"
   }
 ];
 
@@ -151,7 +153,7 @@ let mockCoupons = [
   { _id: "c1", code: "BITES50", discount: 50, type: "fixed", active: true },
   { _id: "c2", code: "10OFF", discount: 10, type: "percentage", active: true }
 ];
-let mockSettings = { deliveryCharge: 40, platformFee: 25 };
+let mockSettings = { deliveryCharge: 40, platformFee: 25, taxRate: 5 };
 
 // In-memory orders for demonstration
 let mockOrders: any[] = [];
@@ -166,7 +168,9 @@ const restaurantSchema = new mongoose.Schema({
   deliveryTime: String,
   image: String,
   tags: [String],
-  status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'] }
+  status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'] },
+  email: { type: String, unique: true },
+  password: { type: String }
 });
 const Restaurant = mongoose.model('Restaurant', restaurantSchema);
 
@@ -176,7 +180,8 @@ const menuSchema = new mongoose.Schema({
   name: String,
   description: String,
   price: Number,
-  category: String
+  category: String,
+  image: String
 });
 const MenuItem = mongoose.model('MenuItem', menuSchema);
 
@@ -184,6 +189,11 @@ const orderSchema = new mongoose.Schema({
   _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   items: Array,
   total: Number,
+  subtotal: Number,
+  deliveryCharge: Number,
+  platformFee: Number,
+  discount: Number,
+  tax: Number,
   status: { type: String, default: 'Pending' },
   customerInfo: Object,
   customerId: String,
@@ -273,7 +283,8 @@ const Coupon = mongoose.model('Coupon', couponSchema);
 const settingsSchema = new mongoose.Schema({
   _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   deliveryCharge: { type: Number, default: 40 },
-  platformFee: { type: Number, default: 25 }
+  platformFee: { type: Number, default: 25 },
+  taxRate: { type: Number, default: 5 }
 });
 const Settings = mongoose.model('Settings', settingsSchema);
 
@@ -434,9 +445,9 @@ async function startServer() {
     } else {
       matchedRestaurants = mockRestaurants.filter(r => 
         r.status === 'approved' && 
-        (r.name.toLowerCase().includes(lowerQ) || 
-         r.cuisine.toLowerCase().includes(lowerQ) || 
-         r.tags.some((t: string) => t.toLowerCase().includes(lowerQ)))
+        ((r.name || '').toLowerCase().includes(lowerQ) || 
+         (r.cuisine || '').toLowerCase().includes(lowerQ) || 
+         (r.tags || []).some((t: string) => t.toLowerCase().includes(lowerQ)))
       );
       
       const allItems = Object.values(mockMenus).flat();
@@ -461,7 +472,10 @@ async function startServer() {
     res.json(reviews);
   });
 
-  app.post("/api/reviews", async (req, res) => {
+  app.post("/api/reviews", authenticate(['customer']), async (req: any, res: any) => {
+    if (req.user.id !== req.body.customerId) {
+        return res.status(403).json({ error: 'Review customerId mismatch' });
+    }
     const reviewData = req.body;
     if (isDbConnected) {
       try {
@@ -486,21 +500,76 @@ async function startServer() {
   });
 
   // Auth Routes
-  app.post('/api/auth/admin/login', (req, res) => {
-    // Dummy admin login for Restaurant Admin
-    const { email, password } = req.body;
-    if (email && password) {
-      // Just accept any login for demo
-      const restaurantId = isDbConnected ? null : "1";
-      const token = jwt.sign({ id: "admin1", role: "admin", restaurantId }, JWT_SECRET, { expiresIn: '1d' });
-      return res.json({ success: true, token, restaurantId }); 
+  app.post('/api/auth/admin/register', async (req, res) => {
+    try {
+      const payload = { ...req.body };
+      if (payload.email) payload.email = payload.email.toLowerCase();
+
+      if (isDbConnected) {
+        // Basic check
+        const existing = await Restaurant.findOne({ email: payload.email });
+        if (existing) {
+          return res.status(400).json({ error: 'Email already in use' });
+        }
+        const newRestaurant = new Restaurant(payload);
+        await newRestaurant.save();
+        const token = jwt.sign({ id: newRestaurant._id, role: "admin", restaurantId: newRestaurant._id }, JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ success: true, token, restaurantId: newRestaurant._id });
+      } else {
+        const existing = mockRestaurants.find(r => (r.email || '').toLowerCase() === payload.email);
+        if (existing) {
+          return res.status(400).json({ error: 'Email already in use' });
+        }
+        const newRest = { _id: "rest_" + Date.now(), status: "pending", ...payload };
+        mockRestaurants.push(newRest);
+        const token = jwt.sign({ id: newRest._id, role: "admin", restaurantId: newRest._id }, JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ success: true, token, restaurantId: newRest._id });
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Registration failed' });
     }
-    res.status(401).json({ error: 'Invalid credentials' });
+  });
+
+  app.post('/api/auth/admin/login', async (req, res) => {
+    let { email, password } = req.body;
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(401).json({ error: 'Invalid credentials format' });
+    }
+    try {
+      if (isDbConnected) {
+        const restaurant = await Restaurant.findOne({ 
+          email: { $regex: new RegExp(`^${(email || '').replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i') }, 
+          password 
+        });
+        if (restaurant) {
+          const token = jwt.sign({ id: restaurant._id, role: "admin", restaurantId: restaurant._id }, JWT_SECRET, { expiresIn: '1d' });
+          return res.json({ success: true, token, restaurantId: restaurant._id }); 
+        }
+      } else {
+        const restaurant = mockRestaurants.find(r => (r.email || '').toLowerCase() === (email || '').toLowerCase() && r.password === password);
+        if (restaurant) {
+          const token = jwt.sign({ id: restaurant._id, role: "admin", restaurantId: restaurant._id }, JWT_SECRET, { expiresIn: '1d' });
+          return res.json({ success: true, token, restaurantId: restaurant._id });
+        }
+        // Fallback for mock data that doesn't have email/password initialized
+        if (email === 'admin@foodbites.com' && password === 'admin123') {
+           const token = jwt.sign({ id: "1", role: "admin", restaurantId: "1" }, JWT_SECRET, { expiresIn: '1d' });
+           return res.json({ success: true, token, restaurantId: "1" });
+        }
+      }
+      return res.status(401).json({ error: 'Invalid credentials' });
+    } catch (error) {
+      return res.status(500).json({ error: 'Login failed' });
+    }
   });
 
   // Super Admin Login Route - Server-side only check
   app.post('/api/superadmin/login', async (req, res) => {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(401).json({ error: 'Invalid credentials format' });
+    }
     if (isDbConnected) {
       const admin = await SuperAdmin.findOne({ email, password });
       if (admin) {
@@ -520,13 +589,16 @@ async function startServer() {
 
   app.post('/api/customers/register', async (req, res) => {
     try {
+      const payload = { ...req.body };
+      if (payload.email) payload.email = payload.email.toLowerCase();
+      
       if (isDbConnected) {
-        const newCustomer = new Customer(req.body);
+        const newCustomer = new Customer(payload);
         await newCustomer.save();
         const token = jwt.sign({ id: newCustomer._id, role: "customer" }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ success: true, customer: newCustomer, token });
       } else {
-        const newCust = { _id: "cust_" + Date.now(), ...req.body };
+        const newCust = { _id: "cust_" + Date.now(), ...payload };
         mockCustomers.push(newCust);
         const token = jwt.sign({ id: newCust._id, role: "customer" }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ success: true, customer: newCust, token });
@@ -538,15 +610,21 @@ async function startServer() {
 
   app.post('/api/customers/login', async (req, res) => {
     const { email, password } = req.body;
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(401).json({ error: 'Invalid format' });
+    }
     try {
       if (isDbConnected) {
-        const customer = await Customer.findOne({ email, password });
+        const customer = await Customer.findOne({ 
+          email: { $regex: new RegExp(`^${(email || '').replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') }, 
+          password 
+        });
         if (customer) {
           const token = jwt.sign({ id: customer._id, role: "customer" }, JWT_SECRET, { expiresIn: '7d' });
           return res.json({ success: true, customer, token });
         }
       } else {
-        const customer = mockCustomers.find(c => c.email === email && c.password === password);
+        const customer = mockCustomers.find(c => (c.email || '').toLowerCase() === (email || '').toLowerCase() && c.password === password);
         if (customer) {
           const token = jwt.sign({ id: customer._id, role: "customer" }, JWT_SECRET, { expiresIn: '7d' });
           return res.json({ success: true, customer, token });
@@ -568,7 +646,10 @@ async function startServer() {
   // Protect admin routes
   app.use('/api/admin', authenticate(['admin', 'superadmin']));
 
-  app.put('/api/customers/:id', async (req, res) => {
+  app.put('/api/customers/:id', authenticate(['customer', 'superadmin']), async (req: any, res: any) => {
+    if (req.user.role !== 'superadmin' && req.user.id !== req.params.id) {
+      return res.status(403).json({ error: 'Unauthorized to edit this user' });
+    }
     try {
       const curId = req.params.id;
       if (req.body.avatar && req.body.avatar.startsWith('data:image')) {
@@ -598,7 +679,10 @@ async function startServer() {
     }
   });
 
-  app.get('/api/customers/:id/orders', async (req, res) => {
+  app.get('/api/customers/:id/orders', authenticate(['customer', 'admin', 'superadmin']), async (req: any, res: any) => {
+    if (req.user.role === 'customer' && req.user.id !== req.params.id) {
+      return res.status(403).json({ error: 'Unauthorized to view these orders' });
+    }
     try {
       if (isDbConnected) {
         const orders = await Order.find({ "customerId": req.params.id }).populate('restaurantId') || [];
@@ -612,45 +696,77 @@ async function startServer() {
 
   // Get all restaurants for superadmin
   app.get("/api/restaurants/all", async (req, res) => {
+    let restaurants = [];
     if (isDbConnected) {
       try {
-        const restaurants = await Restaurant.find();
-        return res.json(restaurants.length > 0 ? restaurants : mockRestaurants);
+        restaurants = await Restaurant.find();
+        if (restaurants.length === 0) restaurants = mockRestaurants;
       } catch (err) {
         return res.status(500).json({ error: "Database error" });
       }
+    } else {
+      restaurants = mockRestaurants;
     }
-    res.json(mockRestaurants);
+    res.json(restaurants);
   });
 
   // Get approved restaurants (for customers)
   app.get("/api/restaurants", async (req, res) => {
+    let approved: any[] = [];
     if (isDbConnected) {
       try {
-        // Find approved, or if we just added this field gracefully fallback to handling ones where status is missing as approved possibly. But let's assume 'approved' is standard or missing defaults to pending.
-        const restaurants = await Restaurant.find({ status: { $ne: 'rejected' } }); 
-        // to simplify, we can just return all for customers unless they are rejected or pending, 
-        // but wait, earlier we returned all. Let's only return approved.
-        const approved = await Restaurant.find({ status: 'approved' });
-        return res.json(approved.length > 0 ? approved : mockRestaurants.filter(r => r.status === 'approved'));
+        approved = await Restaurant.find({ status: { $ne: 'rejected' } });
+        if (approved.length === 0) approved = mockRestaurants.filter(r => r.status !== 'rejected');
       } catch (err) {
          return res.status(500).json({ error: "Database error" });
       }
+    } else {
+      approved = mockRestaurants.filter(r => r.status !== 'rejected');
     }
-    res.json(mockRestaurants.filter(r => r.status === 'approved'));
+
+    // Append dynamic ratings
+    const restaurantsWithRatings = await Promise.all(approved.map(async (r: any) => {
+      let rObj = r.toObject ? r.toObject() : { ...r };
+      let revs = [];
+      if (isDbConnected) revs = await Review.find({ restaurantId: rObj._id });
+      else revs = mockReviews.filter(rev => rev.restaurantId === rObj._id);
+      
+      if (revs.length > 0) {
+        rObj.ratingStr = (revs.reduce((acc: number, rev: any) => acc + (rev.rating || 0), 0) / revs.length).toFixed(1);
+      } else {
+        rObj.ratingStr = "Yet to get Review";
+      }
+      return rObj;
+    }));
+
+    res.json(restaurantsWithRatings);
   });
 
   // Get restaurant by ID
   app.get("/api/restaurants/:id", async (req, res) => {
+    let restaurant: any = null;
     if (isDbConnected) {
       try {
-        const restaurant = await Restaurant.findById(req.params.id);
-        if (restaurant) return res.json(restaurant);
+        restaurant = await Restaurant.findById(req.params.id);
       } catch (err) {}
     }
-    const restaurant = mockRestaurants.find(r => r._id === req.params.id);
+    if (!restaurant) {
+      restaurant = mockRestaurants.find(r => r._id === req.params.id);
+    }
     if (!restaurant) return res.status(404).json({ error: "Restaurant not found" });
-    res.json(restaurant);
+
+    let rObj = restaurant.toObject ? restaurant.toObject() : { ...restaurant };
+    let revs = [];
+    if (isDbConnected) revs = await Review.find({ restaurantId: rObj._id });
+    else revs = mockReviews.filter(rev => rev.restaurantId === rObj._id);
+    
+    if (revs.length > 0) {
+      rObj.ratingStr = (revs.reduce((acc: number, rev: any) => acc + (rev.rating || 0), 0) / revs.length).toFixed(1);
+    } else {
+      rObj.ratingStr = "Yet to get Review";
+    }
+
+    res.json(rObj);
   });
 
   // Update restaurant status (SuperAdmin)
@@ -763,35 +879,102 @@ async function startServer() {
   });
 
   // Create an order
-  app.post("/api/orders", async (req, res) => {
+  app.post("/api/orders", authenticate(['customer']), async (req: any, res: any) => {
+    if (req.user.id !== req.body.customerId) {
+      return res.status(403).json({ error: 'Order customerId mismatch' });
+    }
     const orderData = req.body;
+    
     // Basic assignment of restaurantId from the first item
     const restaurantId = orderData.items[0]?.restaurantId || "1"; 
     
+    // Security check: Recalculate totals
+    let expectedSubtotal = 0;
+    try {
+      if (isDbConnected) {
+        for (const item of orderData.items) {
+          const menuItem = await MenuItem.findById(item._id);
+          if (menuItem) expectedSubtotal += menuItem.price * item.quantity;
+        }
+      } else {
+        expectedSubtotal = orderData.subtotal; // In mock, simply trust or recalculate if mockMenu is available
+      }
+    } catch (e) {
+      // Ignore
+    }
+    
+    // Fallback securely calculation for tax etc.
+    let taxRate = 5;
+    let deliveryCharge = 40;
+    let platformFee = 25;
+    
+    if (isDbConnected) {
+       const settings = await Settings.findOne();
+       if (settings) {
+          taxRate = settings.taxRate || 5;
+          deliveryCharge = settings.deliveryCharge || 40;
+          platformFee = settings.platformFee || 25;
+       }
+    } else {
+       taxRate = mockSettings.taxRate || 5;
+       deliveryCharge = mockSettings.deliveryCharge || 40;
+       platformFee = mockSettings.platformFee || 25;
+    }
+
+    const calculatedTax = Math.max(0, (expectedSubtotal - (orderData.discount || 0)) * (taxRate / 100));
+    const calculatedTotal = expectedSubtotal + deliveryCharge + platformFee + calculatedTax - (orderData.discount || 0);
+    
+    // We update the orderData with verified numbers
+    const finalOrderData = {
+      ...orderData,
+      subtotal: expectedSubtotal || orderData.subtotal,
+      tax: calculatedTax,
+      deliveryCharge,
+      platformFee,
+      total: expectedSubtotal ? calculatedTotal : orderData.total,
+      restaurantId 
+    };
+
     if (isDbConnected) {
       try {
-        const newOrder = new Order({ ...orderData, restaurantId });
+        const newOrder = new Order(finalOrderData);
         await newOrder.save();
         return res.json({ success: true, order: newOrder });
       } catch (err) {
         return res.status(500).json({ error: "Failed to place order" });
       }
     }
-    const newOrder = { _id: "ord_" + Math.random().toString(36).substr(2, 9), ...orderData, restaurantId, status: 'Pending', createdAt: new Date() };
+    const newOrder = { _id: "ord_" + Math.random().toString(36).substr(2, 9), ...finalOrderData, status: 'Pending', createdAt: new Date() };
     mockOrders.push(newOrder);
     res.json({ success: true, order: newOrder });
   });
 
   // Get order by ID (for tracking)
-  app.get("/api/orders/:id", async (req, res) => {
+  app.get("/api/orders/:id", authenticate(['customer', 'admin', 'superadmin']), async (req: any, res: any) => {
+    let order: any = null;
     if (isDbConnected) {
       try {
-        const order = await Order.findById(req.params.id);
-        if (order) return res.json(order);
+        order = await Order.findById(req.params.id);
       } catch (err) {}
+    } else {
+      order = mockOrders.find(o => o._id === req.params.id);
     }
-    const order = mockOrders.find(o => o._id === req.params.id);
+
     if (!order) return res.status(404).json({ error: "Order not found" });
+
+    // Security Check: Customers can only view their own orders
+    if (req.user.role === 'customer' && order.customerId !== req.user.id) {
+       return res.status(403).json({ error: "Forbidden: You cannot view this order" });
+    }
+    
+    // Admin check: Admins can only view orders of their restaurant
+    if (req.user.role === 'admin') {
+       const adminRestId = req.user.restaurantId || req.user.id;
+       if (order.restaurantId !== adminRestId) {
+          return res.status(403).json({ error: "Forbidden: Order belongs to another restaurant" });
+       }
+    }
+
     res.json(order);
   });
 
@@ -800,20 +983,37 @@ async function startServer() {
     res.json({ connected: isDbConnected, uriSet: !!MONGODB_URI });
   });
 
-  app.get('/api/admin/orders', async (req, res) => {
+  app.get('/api/admin/orders', authenticate(['admin', 'superadmin']), async (req: any, res: any) => {
+    let filter: any = {};
+    if (req.user?.role === 'admin') {
+      filter.restaurantId = req.user.restaurantId || req.user.id;
+    }
+    
     if (isDbConnected) {
       try {
-        const orders = await Order.find().sort({ createdAt: -1 });
+        const orders = await Order.find(filter).sort({ createdAt: -1 });
         return res.json(orders);
       } catch (err) {
         return res.status(500).json({ error: "Database error" });
       }
     }
-    res.json(mockOrders.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+    
+    let orders = mockOrders.slice();
+    if (req.user?.role === 'admin') {
+      const restId = req.user.restaurantId || req.user.id;
+      orders = orders.filter(o => o.restaurantId === restId);
+    }
+    res.json(orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
   });
 
-  app.get('/api/admin/menu', async (req, res) => {
-    const restId = req.query.restaurantId as string || "1";
+  app.get('/api/admin/menu', authenticate(['admin', 'superadmin']), async (req: any, res: any) => {
+    let restId = req.query.restaurantId as string;
+    if (req.user?.role === 'admin') {
+      restId = req.user.restaurantId || req.user.id;
+    } else if (!restId) {
+      restId = "1";
+    }
+
     if (isDbConnected) {
       try {
         const items = await MenuItem.find({ restaurantId: restId });
@@ -825,7 +1025,7 @@ async function startServer() {
     res.json(mockMenus[restId] || []);
   });
 
-  app.get('/api/admin/customers', async (req, res) => {
+  app.get('/api/admin/customers', authenticate(['admin', 'superadmin']), async (req: any, res: any) => {
     if (isDbConnected) {
       try {
         const customers = await Customer.find().sort({ _id: -1 });
@@ -856,17 +1056,17 @@ async function startServer() {
     res.status(404).json({ error: "Order not found" });
   });
 
-  app.post('/api/admin/menu', async (req, res) => {
+  app.post('/api/admin/menu', authenticate(['admin', 'superadmin']), async (req: any, res: any) => {
     try {
       await processImagePayload(req.body, 'image');
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
     let itemData = req.body;
+    let restId = req.user?.restaurantId || itemData.restaurantId;
+    
     if (isDbConnected) {
       try {
-        // Find first restaurant if not provided
-        let restId = itemData.restaurantId;
         if (!restId) {
            const rest = await Restaurant.findOne();
            restId = rest ? rest._id : null;
@@ -879,7 +1079,7 @@ async function startServer() {
       }
     }
 
-    const restId = itemData.restaurantId || "1";
+    restId = restId || "1";
     const newItem = { _id: "m_" + Date.now(), ...itemData, restaurantId: restId };
     if (!mockMenus[restId]) mockMenus[restId] = [];
     mockMenus[restId].push(newItem);
@@ -984,24 +1184,72 @@ async function startServer() {
   });
 
   // Get Admin Stats (SuperAdmin also uses this or a broader one)
-  app.get('/api/admin/stats', async (req, res) => {
+  app.get('/api/admin/stats', authenticate(['admin', 'superadmin']), async (req: any, res: any) => {
+    let filter: any = {};
+    if (req.user?.role === 'admin') {
+      filter.restaurantId = req.user.restaurantId || req.user.id;
+    }
+    
+    if (req.query.period === 'monthly') {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0,0,0,0);
+      filter.createdAt = { $gte: startOfMonth };
+    }
+
     let orders = [];
     if (isDbConnected) {
-      orders = await Order.find();
+      orders = await Order.find(filter);
     } else {
       orders = mockOrders;
+      if (req.user?.role === 'admin') {
+        const restId = req.user.restaurantId || req.user.id;
+        orders = orders.filter(o => o.restaurantId === restId);
+      }
+      if (req.query.period === 'monthly') {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0,0,0,0);
+        orders = orders.filter(o => new Date(o.createdAt || new Date()) >= startOfMonth);
+      }
     }
     
     const totalRevenue = orders.reduce((sum, order) => sum + (order.total || 0), 0);
     const totalOrders = orders.length;
     const pendingOrders = orders.filter(o => o.status === 'Pending').length;
     const completedOrders = orders.filter(o => o.status === 'Delivered').length;
+
+    const totalDeliveryCharge = orders.reduce((sum, order) => sum + (order.deliveryCharge || 0), 0);
+    const totalPlatformFee = orders.reduce((sum, order) => sum + (order.platformFee || 0), 0);
+    const totalDiscount = orders.reduce((sum, order) => sum + (order.discount || 0), 0);
+
+    let restaurantStats: any = {};
+    for (const o of orders) {
+       const rId = o.restaurantId || "1";
+       if (!restaurantStats[rId]) {
+           let rName = "Unknown";
+           if (isDbConnected) {
+              const r = await Restaurant.findById(rId);
+              if (r) rName = r.name;
+           } else {
+              const r = mockRestaurants.find(x => x._id === rId);
+              if (r) rName = r.name;
+           }
+           restaurantStats[rId] = { restaurantId: rId, name: rName, totalOrders: 0, totalSales: 0 };
+       }
+       restaurantStats[rId].totalOrders++;
+       restaurantStats[rId].totalSales += (o.total || 0);
+    }
     
     res.json({
       totalRevenue,
       totalOrders,
       pendingOrders,
-      completedOrders
+      completedOrders,
+      totalDeliveryCharge,
+      totalPlatformFee,
+      totalDiscount,
+      restaurantStats: Object.values(restaurantStats)
     });
   });
 

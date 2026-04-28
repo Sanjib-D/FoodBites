@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, ClipboardList, UtensilsCrossed, BarChart3, Users, Bell, LogOut, X } from 'lucide-react';
 import { Link, useNavigate, Routes, Route, useLocation } from 'react-router-dom';
 
@@ -15,12 +15,34 @@ export function AdminDashboard() {
   const location = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [restaurantName, setRestaurantName] = useState('Loading...');
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('restaurantId');
     navigate('/admin/login');
   };
+
+  useEffect(() => {
+    if (!localStorage.getItem('token')) {
+      navigate('/admin/login');
+      return;
+    }
+    let isMounted = true;
+    const fetchRest = async () => {
+      try {
+        const restId = localStorage.getItem('restaurantId') || '1';
+        const res = await fetch(`/api/restaurants/${restId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isMounted) setRestaurantName(data.name || 'Restaurant Admin');
+      } catch (e) {
+        if (isMounted) setRestaurantName('Restaurant Admin');
+      }
+    };
+    fetchRest();
+    return () => { isMounted = false; };
+  }, []);
 
   const currentPath = location.pathname;
 
@@ -37,11 +59,40 @@ export function AdminDashboard() {
     );
   };
 
-  const notifications = [
-    { id: 1, text: "New order #FB-1093 received", time: "2 min ago" },
-    { id: 2, text: "Sarah Jenkins completed order #FB-1089", time: "15 min ago" },
-    { id: 3, text: "Truffle Pasta inventory running low", time: "1 hour ago" },
-  ];
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchNotifications = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const headers: any = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        
+        const res = await fetch('/api/admin/orders', { headers });
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        if (isMounted) {
+          const recentOrders = data.slice(0, 5).map((o: any) => ({
+            id: o._id,
+            text: `Order #${o._id.substring(0,8)} is ${o.status}`,
+            time: new Date(o.createdAt).toLocaleTimeString()
+          }));
+          setNotifications(recentOrders);
+        }
+      } catch(err) {
+        // ignore
+      }
+    };
+    
+    fetchNotifications();
+    const inv = setInterval(fetchNotifications, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(inv);
+    };
+  }, []);
 
   return (
     <div className="w-full h-screen bg-slate-50 text-slate-900 flex overflow-hidden font-sans">
@@ -71,10 +122,10 @@ export function AdminDashboard() {
         <div className="p-4 border-t border-slate-800">
           <div className="flex items-center gap-3 p-2 bg-slate-800 rounded-lg group cursor-pointer" onClick={handleLogout}>
             <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white">
-                AM
+                {restaurantName.substring(0, 1).toUpperCase()}
             </div>
             <div className="flex-1">
-              <p className="text-white font-medium text-xs">Alex Manager</p>
+              <p className="text-white font-medium text-xs truncate max-w-[100px]">{restaurantName}</p>
               <p className="opacity-50 text-xs">Admin Panel</p>
             </div>
             <LogOut className="w-4 h-4 text-slate-400 group-hover:text-white" />
@@ -96,7 +147,7 @@ export function AdminDashboard() {
               onClick={() => setShowNotifications(!showNotifications)}
               className="relative p-2 hover:bg-slate-100 rounded-full transition-colors"
             >
-              <span className="absolute top-1 right-2 w-2 h-2 bg-red-500 border border-white rounded-full"></span>
+              {notifications.length > 0 && <span className="absolute top-1 right-2 w-2 h-2 bg-red-500 border border-white rounded-full"></span>}
               <Bell className="w-5 h-5 text-slate-400" />
             </button>
             

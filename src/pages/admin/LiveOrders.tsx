@@ -7,7 +7,11 @@ export function LiveOrders() {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch('/api/admin/orders');
+      const res = await fetch('/api/admin/orders', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
       const data = await res.json();
       setOrders(data);
     } catch(err) {
@@ -27,7 +31,10 @@ export function LiveOrders() {
     try {
       await fetch(`/api/admin/orders/${id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: JSON.stringify({ status: newStatus })
       });
       fetchOrders();
@@ -77,6 +84,7 @@ export function LiveOrders() {
                   <span className={`px-2 py-1 rounded text-xs font-bold uppercase
                     ${order.status === 'Pending' ? 'bg-orange-100 text-orange-700' : ''}
                     ${order.status === 'Preparing' ? 'bg-blue-100 text-blue-700' : ''}
+                    ${order.status === 'On the way' ? 'bg-indigo-100 text-indigo-700' : ''}
                     ${order.status === 'Delivered' ? 'bg-green-100 text-green-700' : ''}
                   `}>
                     {order.status}
@@ -88,6 +96,9 @@ export function LiveOrders() {
                      <button onClick={() => handleUpdateStatus(order._id, 'Preparing')} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded font-medium hover:bg-slate-800 transition-colors">Accept</button>
                    )}
                    {order.status === 'Preparing' && (
+                     <button onClick={() => handleUpdateStatus(order._id, 'On the way')} className="text-xs bg-blue-500 text-white px-3 py-1.5 rounded font-medium hover:bg-blue-600 transition-colors">Dispatch</button>
+                   )}
+                   {order.status === 'On the way' && (
                      <button onClick={() => handleUpdateStatus(order._id, 'Delivered')} className="text-xs bg-brand-500 text-white px-3 py-1.5 rounded font-medium hover:bg-brand-600 transition-colors">Complete</button>
                    )}
                    {order.status === 'Delivered' && (

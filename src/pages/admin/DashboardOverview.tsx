@@ -8,9 +8,12 @@ export function DashboardOverview() {
 
   const fetchDashboardData = async () => {
     try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      
       const [ordersRes, statsRes] = await Promise.all([
-        fetch('/api/admin/orders'),
-        fetch('/api/admin/stats')
+        fetch('/api/admin/orders', { headers }),
+        fetch('/api/admin/stats', { headers })
       ]);
       const oData = await ordersRes.json();
       const sData = await statsRes.json();
@@ -33,7 +36,10 @@ export function DashboardOverview() {
     try {
       await fetch(`/api/admin/orders/${id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: JSON.stringify({ status: newStatus })
       });
       fetchDashboardData();

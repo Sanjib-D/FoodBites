@@ -1,38 +1,62 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useApi } from '../hooks/useApi';
 import { CheckCircle2, Clock, ChefHat, Bike, Check, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export function OrderTracker() {
   const { id } = useParams();
-  const { data: order, loading, error } = useApi<any>(`/api/orders/${id}`);
   
-  // Real-time tracking mock effect (auto progresses the status for demo purposes)
+  const [order, setOrder] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Pending');
+
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  useEffect(() => {
-    if (order?.status) {
-      setStatus(order.status);
-    }
-  }, [order]);
+  const [restaurantEmail, setRestaurantEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    if (status === 'Pending') {
-      const timer = setTimeout(() => setStatus('Preparing'), 4000);
-      return () => clearTimeout(timer);
-    } else if (status === 'Preparing') {
-      const timer = setTimeout(() => setStatus('On the way'), 6000);
-      return () => clearTimeout(timer);
-    } else if (status === 'On the way') {
-      const timer = setTimeout(() => setStatus('Delivered'), 8000);
-      return () => clearTimeout(timer);
-    }
-  }, [status]);
+    let isMounted = true;
+    const fetchOrder = async () => {
+      try {
+        const res = await fetch(`/api/orders/${id}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        if (!res.ok) throw new Error('Failed to fetch order');
+        const data = await res.json();
+        
+        if (data.restaurantId && !restaurantEmail) {
+           const restRes = await fetch(`/api/restaurants/${data.restaurantId}`);
+           if (restRes.ok) {
+             const restData = await restRes.json();
+             if (isMounted) setRestaurantEmail(restData.email || 'support@foodbites.com');
+           }
+        }
+        
+        if (isMounted) {
+          setOrder(data);
+          setStatus(data.status || 'Pending');
+          setError(null);
+        }
+      } catch (err: any) {
+        if (isMounted) setError(err.message);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchOrder();
+    const interval = setInterval(fetchOrder, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [id]);
 
   const submitReview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,7 +65,10 @@ export function OrderTracker() {
     try {
       const res = await fetch('/api/reviews', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: JSON.stringify({
           restaurantId: order.restaurantId,
           orderId: order._id,
@@ -123,6 +150,58 @@ export function OrderTracker() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 mb-8">
+        <h2 className="text-xl font-bold text-slate-900 mb-4 border-b pb-4">Order Summary</h2>
+        <div className="space-y-4 mb-6 pt-2">
+          {order.items?.map((item: any, i: number) => (
+            <div key={i} className="flex justify-between text-sm">
+              <span className="text-slate-700">{item.quantity}x {item.name}</span>
+              <span className="font-medium text-slate-900">₹{(item.price * item.quantity).toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+        
+        <div className="space-y-2 border-t pt-4 mt-4 text-sm">
+          <div className="flex justify-between text-slate-600">
+             <span>Subtotal</span>
+             <span>₹{Number(order.subtotal || order.items?.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0) || 0).toFixed(2)}</span>
+          </div>
+          {order.deliveryCharge > 0 && (
+             <div className="flex justify-between text-slate-600">
+               <span>Delivery Fee</span>
+               <span>₹{Number(order.deliveryCharge).toFixed(2)}</span>
+             </div>
+          )}
+          {order.platformFee > 0 && (
+             <div className="flex justify-between text-slate-600">
+               <span>Platform Fee</span>
+               <span>₹{Number(order.platformFee).toFixed(2)}</span>
+             </div>
+          )}
+          {order.discount > 0 && (
+             <div className="flex justify-between text-green-600 font-medium">
+               <span>Discount</span>
+               <span>-₹{Number(order.discount).toFixed(2)}</span>
+             </div>
+          )}
+          {order.tax > 0 && (
+             <div className="flex justify-between text-slate-600">
+               <span>Tax</span>
+               <span>₹{Number(order.tax).toFixed(2)}</span>
+             </div>
+          )}
+          <div className="flex justify-between font-bold text-lg pt-2 border-t text-slate-900 mt-2">
+            <span>Total</span>
+            <span>₹{Number(order.total || 0).toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div className="mt-8 pt-6 border-t border-slate-200 text-center">
+           <p className="text-sm text-slate-500 mb-2">Need help with your order?</p>
+           <p className="text-sm font-medium text-brand-600">Contact Restaurant: <a href={`mailto:${restaurantEmail}`} className="hover:underline">{restaurantEmail || 'Loading...'}</a></p>
         </div>
       </div>
 

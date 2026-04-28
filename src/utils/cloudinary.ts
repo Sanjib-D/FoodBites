@@ -1,4 +1,4 @@
-export function getCloudinaryUrl(url: string, width: number, quality: 'eco' | 'low' | 'good' | 'best' = 'auto'): string {
+export function getCloudinaryUrl(url: string, width: number, quality: 'auto' | 'eco' | 'low' | 'good' | 'best' = 'auto'): string {
   if (!url || !url.includes('res.cloudinary.com')) return url;
   
   // Example Cloudinary URL:

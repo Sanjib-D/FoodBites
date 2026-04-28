@@ -42,10 +42,10 @@ export function OrderHistory() {
       ) : (
         <div className="space-y-4">
           {orders.map(order => (
-            <div key={order._id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
+            <Link to={`/order/${order._id}`} key={order._id} className="block bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row justify-between md:items-center gap-4 group">
               <div>
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="font-bold text-slate-900 text-lg">Order #{order._id.slice(-6).toUpperCase()}</span>
+                  <span className="font-bold text-slate-900 text-lg group-hover:text-brand-600 transition-colors">Order #{order._id.slice(-6).toUpperCase()}</span>
                   <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold capitalize">
                     {order.status}
                   </span>
@@ -57,11 +57,11 @@ export function OrderHistory() {
               </div>
               <div className="flex items-center justify-between md:flex-col md:items-end gap-2">
                 <div className="font-black text-xl text-brand-600">₹{Number(order.total || 0).toFixed(2)}</div>
-                <Link to={`/order/${order._id}`} className="text-sm font-bold text-brand-500 hover:text-brand-600">
-                  Track Order
-                </Link>
+                <span className="text-sm font-bold text-brand-500 group-hover:text-brand-600 flex items-center gap-1">
+                  View Details
+                </span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

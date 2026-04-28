@@ -2,12 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Store, Tag, Settings, BarChart, FileText, Trash2, Briefcase, Filter, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+const fetchWithAuth = async (url: string, options: any = {}) => {
+  const token = localStorage.getItem('token');
+  const headers = { ...options.headers };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+};
+
 export function SuperAdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [restaurants, setRestaurants] = useState<any[]>([]);
   const [coupons, setCoupons] = useState<any[]>([]);
-  const [settings, setSettings] = useState({ deliveryCharge: 0, platformFee: 0 });
-  const [stats, setStats] = useState({ totalRevenue: 0, totalOrders: 0, paddingOrders: 0, completedOrders: 0 });
+  const [settings, setSettings] = useState({ deliveryCharge: 0, platformFee: 0, taxRate: 5 });
+  const [stats, setStats] = useState<any>({ 
+    totalRevenue: 0, totalOrders: 0, paddingOrders: 0, completedOrders: 0,
+    totalDeliveryCharge: 0, totalPlatformFee: 0, totalDiscount: 0, restaurantStats: []
+  });
+  const [period, setPeriod] = useState('lifetime');
+  const [restSortBy, setRestSortBy] = useState('totalSales');
   const [applications, setApplications] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
   const [jobFilter, setJobFilter] = useState('All');
@@ -16,18 +30,22 @@ export function SuperAdminDashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (!localStorage.getItem('token')) {
+      navigate('/superadmin/login');
+      return;
+    }
     fetchData();
-  }, []);
+  }, [period]);
 
   const fetchData = async () => {
     try {
       const [restRes, coupRes, settRes, statRes, appRes, jobRes] = await Promise.all([
-        fetch('/api/restaurants/all'),
-        fetch('/api/superadmin/coupons'),
-        fetch('/api/superadmin/settings'),
-        fetch('/api/admin/stats'),
-        fetch('/api/superadmin/applications'),
-        fetch('/api/jobs')
+        fetchWithAuth('/api/restaurants/all'),
+        fetchWithAuth('/api/superadmin/coupons'),
+        fetchWithAuth('/api/superadmin/settings'),
+        fetchWithAuth(`/api/admin/stats?period=${period}`),
+        fetchWithAuth('/api/superadmin/applications'),
+        fetchWithAuth('/api/jobs')
       ]);
       setRestaurants(await restRes.json());
       setCoupons(await coupRes.json());
@@ -42,7 +60,7 @@ export function SuperAdminDashboard() {
 
   const updateRestaurantStatus = async (id: string, status: string) => {
     try {
-      await fetch(`/api/superadmin/restaurants/${id}/status`, {
+      await fetchWithAuth(`/api/superadmin/restaurants/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
@@ -56,7 +74,7 @@ export function SuperAdminDashboard() {
   const updateSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetch('/api/superadmin/settings', {
+      await fetchWithAuth('/api/superadmin/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)
@@ -71,7 +89,7 @@ export function SuperAdminDashboard() {
 
   const deleteCoupon = async (id: string) => {
     try {
-      await fetch(`/api/superadmin/coupons/${id}`, { method: 'DELETE' });
+      await fetchWithAuth(`/api/superadmin/coupons/${id}`, { method: 'DELETE' });
       setCoupons(prev => prev.filter(c => c._id !== id));
     } catch (err) {
       alert('Failed to delete coupon');
@@ -81,7 +99,7 @@ export function SuperAdminDashboard() {
   const deleteApplication = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this application?')) return;
     try {
-      await fetch(`/api/superadmin/applications/${id}`, { method: 'DELETE' });
+      await fetchWithAuth(`/api/superadmin/applications/${id}`, { method: 'DELETE' });
       fetchData();
     } catch (err) {
       alert('Failed to delete application');
@@ -91,7 +109,7 @@ export function SuperAdminDashboard() {
   const deleteJob = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this job posting?')) return;
     try {
-      await fetch(`/api/superadmin/jobs/${id}`, { method: 'DELETE' });
+      await fetchWithAuth(`/api/superadmin/jobs/${id}`, { method: 'DELETE' });
       fetchData();
     } catch (err) {
       alert('Failed to delete job');
@@ -107,7 +125,7 @@ export function SuperAdminDashboard() {
       location: formData.get('location')
     };
     try {
-      await fetch(`/api/superadmin/jobs`, {
+      await fetchWithAuth(`/api/superadmin/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newJob)
@@ -128,7 +146,7 @@ export function SuperAdminDashboard() {
       type: formData.get('type')
     };
     try {
-      const res = await fetch(`/api/superadmin/coupons`, {
+      const res = await fetchWithAuth(`/api/superadmin/coupons`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newCoupon)
@@ -324,22 +342,79 @@ export function SuperAdminDashboard() {
         )}
 
         {activeTab === 'dashboard' && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <p className="text-sm text-slate-500 mb-2">Total System Revenue</p>
-              <p className="text-3xl font-black text-slate-900">₹{stats.totalRevenue.toFixed(2)}</p>
+          <div className="space-y-8">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold text-slate-800">Financial Metrics</h3>
+              <div className="bg-white rounded-lg p-1 border border-slate-200">
+                <button onClick={() => setPeriod('lifetime')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${period === 'lifetime' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>Lifetime</button>
+                <button onClick={() => setPeriod('monthly')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${period === 'monthly' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>Monthly</button>
+              </div>
             </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <p className="text-sm text-slate-500 mb-2">Platform Orders</p>
-              <p className="text-3xl font-black text-slate-900">{stats.totalOrders}</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <p className="text-sm text-slate-500 mb-2">Total System Revenue</p>
+                <p className="text-3xl font-black text-slate-900">₹{(stats.totalRevenue || 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <p className="text-sm text-slate-500 mb-2">Delivery Charges</p>
+                <p className="text-3xl font-black text-slate-900">₹{(stats.totalDeliveryCharge || 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <p className="text-sm text-slate-500 mb-2">Platform Fees</p>
+                <p className="text-3xl font-black text-slate-900">₹{(stats.totalPlatformFee || 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <p className="text-sm text-slate-500 mb-2">Coupon Expenses</p>
+                <p className="text-3xl font-black text-red-600">₹{(stats.totalDiscount || 0).toFixed(2)}</p>
+              </div>
             </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <p className="text-sm text-slate-500 mb-2">Active Restaurants</p>
-              <p className="text-3xl font-black text-slate-900">{restaurants.filter(r => r.status === 'approved').length}</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-brand-500 flex flex-col justify-center">
+                 <p className="text-sm text-slate-500 mb-2">Platform Net Profit/Loss</p>
+                 <p className={`text-4xl font-black ${(stats.totalDeliveryCharge + stats.totalPlatformFee - stats.totalDiscount) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                   ₹{((stats.totalDeliveryCharge || 0) + (stats.totalPlatformFee || 0) - (stats.totalDiscount || 0)).toFixed(2)}
+                 </p>
+               </div>
+               <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <p className="text-sm text-slate-500 mb-2">Platform Orders</p>
+                    <p className="text-2xl font-black text-slate-900">{stats.totalOrders || 0}</p>
+                  </div>
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <p className="text-sm text-slate-500 mb-2">Active Restaurants</p>
+                    <p className="text-2xl font-black text-slate-900">{restaurants.filter(r => r.status === 'approved').length}</p>
+                  </div>
+               </div>
             </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <p className="text-sm text-slate-500 mb-2">Active Coupons</p>
-              <p className="text-3xl font-black text-slate-900">{coupons.filter(c => c.active).length}</p>
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+               <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="font-bold text-slate-800">Top Restaurants Details</h3>
+                  <select value={restSortBy} onChange={e => setRestSortBy(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-slate-50 outline-none">
+                     <option value="totalSales">Sort by Total Sales</option>
+                     <option value="totalOrders">Sort by Total Orders</option>
+                  </select>
+               </div>
+               <table className="w-full text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                     <tr>
+                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Restaurant name</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Total Orders</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Total Sales</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                     {[...(stats.restaurantStats || [])].sort((a: any, b: any) => b[restSortBy] - a[restSortBy]).map((rs: any) => (
+                        <tr key={rs.restaurantId} className="hover:bg-slate-50">
+                           <td className="px-6 py-4 font-bold text-slate-900">{rs.name}</td>
+                           <td className="px-6 py-4 text-slate-700">{rs.totalOrders}</td>
+                           <td className="px-6 py-4 text-slate-700 font-medium tracking-tight">₹{rs.totalSales.toFixed(2)}</td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
             </div>
           </div>
         )}
@@ -404,6 +479,15 @@ export function SuperAdminDashboard() {
                   type="number" 
                   value={settings.platformFee}
                   onChange={(e) => setSettings({...settings, platformFee: Number(e.target.value)})}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Default Tax (%)</label>
+                <input 
+                  type="number" 
+                  value={settings.taxRate}
+                  onChange={(e) => setSettings({...settings, taxRate: Number(e.target.value)})}
                   className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
                 />
               </div>

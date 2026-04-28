@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
-import { Star, Clock, Search, UtensilsCrossed } from 'lucide-react';
+import { Star, Clock, Search, UtensilsCrossed, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import { getCloudinaryUrl } from '../utils/cloudinary';
 
 interface Restaurant {
@@ -11,6 +12,7 @@ interface Restaurant {
   name: string;
   cuisine: string;
   rating: number;
+  ratingStr?: string;
   deliveryTime: string;
   image: string;
   tags: string[];
@@ -32,6 +34,28 @@ export function Home() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchFilter, setSearchFilter] = useState<'all' | 'restaurants' | 'items'>('all');
   const { dispatch } = useCart();
+  const { customer } = useAuth();
+  const [activeOrder, setActiveOrder] = useState<any>(null);
+
+  useEffect(() => {
+    if (customer) {
+      const fetchActiveOrders = () => {
+        fetch(`/api/customers/${customer._id}/orders`)
+          .then(res => res.json())
+          .then(data => {
+            if (Array.isArray(data)) {
+               const active = data.find(o => o.status !== 'Delivered' && o.status !== 'Cancelled');
+               setActiveOrder(active || null);
+            }
+          })
+          .catch(err => console.error(err));
+      };
+      
+      fetchActiveOrders();
+      const interval = setInterval(fetchActiveOrders, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [customer]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -57,6 +81,27 @@ export function Home() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      {activeOrder && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8 bg-brand-50 border border-brand-200 rounded-2xl p-4 sm:p-6 flex flex-col sm:flex-row items-center justify-between shadow-sm"
+        >
+          <div className="flex items-center gap-4 mb-4 sm:mb-0">
+            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center border border-brand-100 shadow-sm shrink-0">
+              <span className="animate-pulse w-3 h-3 bg-brand-500 rounded-full block"></span>
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 leading-tight">Order in progress!</h3>
+              <p className="text-sm font-medium text-brand-600 capitalize">Status: {activeOrder.status}</p>
+            </div>
+          </div>
+          <Link to={`/order/${activeOrder._id}`} className="w-full sm:w-auto px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
+            Track Order <ArrowRight className="w-4 h-4" />
+          </Link>
+        </motion.div>
+      )}
+
       <div className="mb-12 text-center sm:text-left flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl sm:text-5xl font-sans font-bold text-slate-900 mb-4 tracking-tight">
@@ -150,7 +195,7 @@ export function Home() {
                      <div>
                        <h4 className="font-bold text-slate-900">{item.name}</h4>
                        <p className="text-sm text-slate-500 line-clamp-1">{item.description}</p>
-                       <p className="text-brand-600 font-bold mt-1">₹{item.price.toFixed(2)}</p>
+                       <p className="text-brand-600 font-bold mt-1">₹{Number(item.price || 0).toFixed(2)}</p>
                      </div>
                      <Link to={`/restaurant/${item.restaurantId}`} className="ml-4 shrink-0 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors">
                        View Info
@@ -172,7 +217,7 @@ export function Home() {
   );
 }
 
-function RestaurantCard({ restaurant, index }: { restaurant: Restaurant, index: number }) {
+function RestaurantCard({ restaurant, index }: { key?: React.Key; restaurant: Restaurant; index: number }) {
   return (
     <Link to={`/restaurant/${restaurant._id}`}>
       <motion.div 
@@ -188,8 +233,8 @@ function RestaurantCard({ restaurant, index }: { restaurant: Restaurant, index: 
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
           <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1 shadow-sm text-slate-800">
-            <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 stroke-yellow-400" />
-            {restaurant.rating}
+            <Star className={`w-4 h-4 ${restaurant.ratingStr === 'Yet to get Review' ? 'text-slate-300' : 'text-yellow-400 fill-yellow-400 stroke-yellow-400'}`} />
+            {restaurant.ratingStr || restaurant.rating}
           </div>
         </div>
         <div className="p-6 flex-1 flex flex-col">
@@ -207,7 +252,7 @@ function RestaurantCard({ restaurant, index }: { restaurant: Restaurant, index: 
             </span>
           </div>
           <div className="flex flex-wrap gap-2 mt-auto">
-            {restaurant.tags.slice(0, 3).map(tag => (
+            {(restaurant.tags || []).slice(0, 3).map(tag => (
               <span key={tag} className="px-2.5 py-1 bg-brand-100 text-brand-600 rounded text-[10px] font-bold uppercase tracking-wider">
                 {tag}
               </span>

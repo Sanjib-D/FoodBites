@@ -21,7 +21,9 @@ export function MenuManagement() {
 
   const fetchMenu = async () => {
     try {
-      const res = await fetch('/api/admin/menu');
+      const res = await fetch('/api/admin/menu', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
       const data = await res.json();
       setItems(data);
     } catch(err) {
@@ -38,7 +40,10 @@ export function MenuManagement() {
   const handleDelete = async (id: string) => {
     if(!confirm('Are you sure?')) return;
     try {
-      await fetch(`/api/admin/menu/${id}`, { method: 'DELETE' });
+      await fetch(`/api/admin/menu/${id}`, { 
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
       fetchMenu();
     } catch(err) {
       console.error(err);
@@ -81,13 +86,19 @@ export function MenuManagement() {
       if (editId) {
         await fetch(`/api/admin/menu/${editId}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
           body: JSON.stringify(payload)
         });
       } else {
         await fetch('/api/admin/menu', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
           body: JSON.stringify(payload)
         });
       }
@@ -205,7 +216,7 @@ export function MenuManagement() {
               <p className="text-sm text-slate-500 flex-1 mb-4 line-clamp-2">{item.description}</p>
               <div className="flex justify-between border-t border-slate-50 pt-3">
                 <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{item.category}</span>
-                <span className="font-bold text-slate-900">₹{parseFloat(item.price).toFixed(2)}</span>
+                <span className="font-bold text-slate-900">₹{Number(item.price || 0).toFixed(2)}</span>
               </div>
             </div>
           ))}

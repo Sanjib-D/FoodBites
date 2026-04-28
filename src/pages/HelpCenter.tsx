@@ -3,10 +3,11 @@ import { HelpCircle, Clock, Truck, ShieldAlert } from 'lucide-react';
 
 export function HelpCenter() {
   const faqs = [
-    { q: "How long does delivery take?", a: "Most deliveries take between 25-45 minutes depending on traffic and restaurant preparation time. You can track your order live on the tracking page." },
-    { q: "What is the minimum order amount?", a: "There is no minimum order amount for most of our partner restaurants, though delivery fees may vary based on distance." },
-    { q: "How do I cancel my order?", a: "You can cancel your order within 2 minutes of placing it from the active orders screen. Once the restaurant accepts and starts preparing, cancellations are not permitted." },
-    { q: "Do you offer refunds for missing items?", a: "Yes. If an item is missing from your delivery, please contact our support team immediately, and we will issue a refund or arrange a replacement." },
+    { q: "How long does delivery take?", a: "Most deliveries take between 25-45 minutes depending on traffic and restaurant preparation time. You can track your order live via map tracking on the order status page." },
+    { q: "What is the minimum order amount?", a: "There is no minimum order amount for most of our partner restaurants, though delivery fees may vary based on your distance from the selected kitchen." },
+    { q: "How do I cancel my order?", a: "You can cancel your order within 2 minutes of placing it from the active orders screen. Once the restaurant accepts and starts preparing, cancellations cannot be automatically processed." },
+    { q: "Do you offer refunds for missing items?", a: "Yes. If an item is missing from your delivery, please contact our support team immediately. We guarantee instant credits or refunds for any verified discrepancies." },
+    { q: "How do the restaurant ratings work?", a: "Our ratings are strictly generated from verified customers who have completed an order. This ensures actual diner feedback is front and center." },
   ];
 
   return (

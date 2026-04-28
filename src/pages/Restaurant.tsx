@@ -40,6 +40,10 @@ export function Restaurant() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const averageRating = reviews && reviews.length > 0 
+    ? (reviews.reduce((acc: number, r: any) => acc + (r.rating || 0), 0) / reviews.length).toFixed(1)
+    : 'Yet to get Review';
+
   if (loadingRest || loadingMenu) {
     return (
       <div className="flex-1 flex justify-center items-center">
@@ -53,10 +57,10 @@ export function Restaurant() {
   }
 
   // Get unique categories
-  const categories: string[] = ['All', ...Array.from(new Set<string>((menuItems || []).map(item => item.category)))];
+  const categories: string[] = ['All', ...Array.from(new Set<string>((menuItems || []).map(item => item.category || 'Mains')))];
 
   // Apply filters and sort
-  const filteredItems = (menuItems || []).filter(item => activeCategory === 'All' || item.category === activeCategory);
+  const filteredItems = (menuItems || []).filter(item => activeCategory === 'All' || (item.category || 'Mains') === activeCategory);
   
   const sortedItems = [...filteredItems].sort((a, b) => {
     if (sortOption === 'price_asc') return a.price - b.price;
@@ -112,7 +116,7 @@ export function Restaurant() {
             <div className="flex-1">
               <h2 className="font-bold text-slate-900 leading-tight md:text-base text-sm truncate max-w-[150px] md:max-w-none">{restaurant.name}</h2>
               <p className="text-xs text-slate-500 font-medium flex items-center gap-1 hidden md:flex">
-                <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" /> {restaurant.rating} • {restaurant.deliveryTime}
+                <Star className={`w-3 h-3 ${averageRating === 'Yet to get Review' ? 'text-slate-300' : 'text-yellow-400 fill-yellow-400'}`} /> {averageRating} • {restaurant.deliveryTime}
               </p>
             </div>
             
@@ -181,8 +185,8 @@ export function Restaurant() {
           <h1 className="font-sans text-4xl md:text-6xl font-black mb-4 tracking-tight drop-shadow-md">{restaurant.name}</h1>
           <div className="flex flex-wrap items-center gap-4 text-sm md:text-base font-medium opacity-90">
             <span className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full backdrop-blur">
-              <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-              {restaurant.rating}
+              <Star className={`w-4 h-4 ${averageRating === 'Yet to get Review' ? 'text-white/50' : 'text-yellow-400 fill-yellow-400'}`} />
+              {averageRating}
             </span>
             <span className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full backdrop-blur">
               <Clock className="w-4 h-4" />
@@ -251,7 +255,7 @@ export function Restaurant() {
                     <div className="flex-1">
                       <div className="flex justify-between items-start mb-2 gap-4">
                         <h3 className="font-bold text-lg text-slate-900 leading-tight">{item.name}</h3>
-                        <span className="font-bold text-xl text-brand-600 shrink-0">₹{item.price.toFixed(2)}</span>
+                        <span className="font-bold text-xl text-brand-600 shrink-0">₹{Number(item.price || 0).toFixed(2)}</span>
                       </div>
                       <p className="text-slate-500 text-sm leading-relaxed mb-6">{item.description}</p>
                     </div>

@@ -7,7 +7,9 @@ export function Customers() {
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
-        const res = await fetch('/api/admin/customers');
+        const res = await fetch('/api/admin/customers', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
         const data = await res.json();
         setCustomers(data);
       } catch(err) {
