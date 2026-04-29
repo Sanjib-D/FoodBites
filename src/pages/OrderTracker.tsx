@@ -81,10 +81,11 @@ export function OrderTracker() {
       if (res.ok) {
         setReviewSubmitted(true);
       } else {
-        alert('Failed to submit review');
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to submit review');
       }
-    } catch (err) {
-      alert('Error submitting review');
+    } catch (err: any) {
+      alert(err.message || 'Error submitting review');
     } finally {
       setSubmittingReview(false);
     }
@@ -205,7 +206,7 @@ export function OrderTracker() {
         </div>
       </div>
 
-      {status === 'Delivered' && !reviewSubmitted && (
+      {status === 'Delivered' && !order.hasReviewed && !reviewSubmitted && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -243,7 +244,7 @@ export function OrderTracker() {
         </motion.div>
       )}
 
-      {reviewSubmitted && (
+      {(reviewSubmitted || order.hasReviewed) && (
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -253,7 +254,17 @@ export function OrderTracker() {
             <Check className="w-6 h-6" />
           </div>
           <h3 className="text-green-800 font-bold text-lg mb-1">Thanks for your feedback!</h3>
-          <p className="text-green-600 text-sm">Your review has been published.</p>
+          <p className="text-green-600 text-sm mb-4">Your review has been published.</p>
+          {(order.review || (reviewSubmitted && rating)) && (
+            <div className="bg-white p-4 rounded-lg inline-block text-left shadow-sm mt-2 w-full max-w-sm">
+               <div className="flex justify-center gap-1 mb-2">
+                 {[1, 2, 3, 4, 5].map((star) => (
+                   <Star key={star} className={`w-5 h-5 ${(order.review?.rating || rating) >= star ? 'text-yellow-400 fill-yellow-400' : 'text-slate-300'}`} />
+                 ))}
+               </div>
+               <p className="text-slate-700 text-sm text-center italic">"{order.review?.comment || comment}"</p>
+            </div>
+          )}
         </motion.div>
       )}
 

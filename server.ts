@@ -612,6 +612,11 @@ async function startServer() {
       const payload = { ...req.body };
       if (payload.email) payload.email = payload.email.toLowerCase();
       
+      // Initialize addresses array with the provided address
+      if (payload.address) {
+        payload.addresses = [payload.address];
+      }
+
       if (isDbConnected) {
         const newCustomer = new Customer(payload);
         await newCustomer.save();
@@ -990,6 +995,21 @@ async function startServer() {
         return res.status(500).json({ error: "Failed to place order: " + err.message });
       }
     }
+    
+    // Update mock customer address if applicable
+    if (req.body.customerId && finalOrderData.customerInfo?.address) {
+      const mockCust = mockCustomers.find(c => c._id === req.body.customerId);
+      if (mockCust) {
+        if (!mockCust.addresses) mockCust.addresses = [];
+        const addrStr = finalOrderData.customerInfo.address;
+        const exists = mockCust.addresses.find((a: any) => (typeof a === 'object' ? a.formatted : a) === addrStr);
+        if (!exists) {
+          mockCust.addresses.push(addrStr);
+          if (!mockCust.address) mockCust.address = addrStr;
+        }
+      }
+    }
+
     const newOrder = { _id: "ord_" + Math.random().toString(36).substr(2, 9), ...finalOrderData, status: 'Pending', createdAt: new Date() };
     mockOrders.push(newOrder);
     console.log("Mock Order saved successfully:", newOrder._id);
@@ -1031,7 +1051,26 @@ async function startServer() {
        // But often an order ID is a secret URL. For now, allow or block? Let's just allow it since IDs are random or ObjectIds, acting as capabilities.
     }
 
-    res.json(order);
+    let orderObj = order.toObject ? order.toObject() : { ...order };
+
+    // Check if the order has been reviewed
+    if (isDbConnected) {
+      try {
+        const existingReview = await Review.findOne({ orderId: req.params.id });
+        if (existingReview) {
+          orderObj.hasReviewed = true;
+          orderObj.review = existingReview;
+        }
+      } catch (e) {}
+    } else {
+      const existingReview = mockReviews.find(r => r.orderId === req.params.id);
+      if (existingReview) {
+        orderObj.hasReviewed = true;
+        orderObj.review = existingReview;
+      }
+    }
+
+    res.json(orderObj);
   });
 
   // Admin Routes

@@ -5,6 +5,10 @@ import { useAuth } from '../context/AuthContext';
 export function CustomerLogin() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  
+  const searchParams = new URLSearchParams(window.location.search);
+  const redirectParams = searchParams.get('redirect') || '/';
+
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
@@ -35,7 +39,7 @@ export function CustomerLogin() {
           localStorage.setItem('token', data.token);
         }
         login(data.customer);
-        navigate('/');
+        navigate(redirectParams);
       } else {
         setError(data.error || 'Authentication failed');
       }

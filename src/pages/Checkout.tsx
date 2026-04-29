@@ -29,6 +29,12 @@ export function Checkout() {
   const [taxRate, setTaxRate] = useState(5);
 
   useEffect(() => {
+    if (!customer) {
+      navigate('/login?redirect=/checkout');
+    }
+  }, [customer, navigate]);
+
+  useEffect(() => {
     // Fetch settings for charges
     fetch('/api/superadmin/settings')
       .then(res => res.json())
@@ -175,13 +181,6 @@ export function Checkout() {
     <div className="max-w-5xl mx-auto px-4 py-8 md:py-12 bg-slate-50 min-h-screen">
       <h1 className="font-sans text-3xl font-bold mb-8 text-slate-900 tracking-tight">Checkout</h1>
       
-      {!customer && (
-        <div className="mb-8 p-4 bg-blue-50 border border-blue-100 text-blue-800 rounded-xl text-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <span>Sign in for faster checkout, saved addresses, and live order tracking.</span>
-          <button type="button" onClick={() => navigate('/login')} className="font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shrink-0">Login / Signup</button>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
         <div className="lg:col-span-7">
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-8">

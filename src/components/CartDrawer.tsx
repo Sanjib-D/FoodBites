@@ -1,5 +1,6 @@
 import React from 'react';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { X, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,10 +13,15 @@ interface CartDrawerProps {
 export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const { items, updateQuantity, total, clearCart } = useCart();
   const navigate = useNavigate();
+  const { customer } = useAuth();
 
   const handleCheckout = () => {
     onClose();
-    navigate('/checkout');
+    if (!customer) {
+      navigate('/login?redirect=/checkout');
+    } else {
+      navigate('/checkout');
+    }
   };
 
   return (
