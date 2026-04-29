@@ -26,10 +26,13 @@ export function CustomerProfile() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  if (!customer) {
-    navigate('/login');
-    return null;
-  }
+  React.useEffect(() => {
+    if (!customer) {
+      navigate('/login');
+    }
+  }, [customer, navigate]);
+
+  if (!customer) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Store, Tag, Settings, BarChart, FileText, Trash2, Briefcase, Filter, Plus } from 'lucide-react';
+import { Shield, Store, Tag, Settings, BarChart, FileText, Trash2, Briefcase, Filter, Plus, MessageSquare, Edit2, LogOut, Receipt } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { SuperAdminReviews } from './SuperAdminReviews';
+import { SuperAdminOrders } from './SuperAdminOrders';
 
 const fetchWithAuth = async (url: string, options: any = {}) => {
   const token = localStorage.getItem('token');
@@ -13,14 +15,36 @@ const fetchWithAuth = async (url: string, options: any = {}) => {
 
 export function SuperAdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [tabKey, setTabKey] = useState(Date.now());
+
+  const handleTabClick = (tabName: string) => {
+    if (activeTab === tabName) {
+      setTabKey(Date.now());
+    } else {
+      setActiveTab(tabName);
+    }
+  };
+
   const [restaurants, setRestaurants] = useState<any[]>([]);
   const [coupons, setCoupons] = useState<any[]>([]);
-  const [settings, setSettings] = useState({ deliveryCharge: 0, platformFee: 0, taxRate: 5 });
+  const [settings, setSettings] = useState<any>({ deliveryCharge: 0, platformFee: 0, taxRate: 5, restaurantFeePercent: 5, restaurantFeeFixed: 10 });
   const [stats, setStats] = useState<any>({ 
     totalRevenue: 0, totalOrders: 0, paddingOrders: 0, completedOrders: 0,
-    totalDeliveryCharge: 0, totalPlatformFee: 0, totalDiscount: 0, restaurantStats: []
+    totalSubtotal: 0, totalDeliveryCharge: 0, totalPlatformFee: 0, 
+    totalRestaurantPlatformFee: 0, totalDiscount: 0, totalTax: 0, restaurantStats: []
   });
   const [period, setPeriod] = useState('lifetime');
+  const [month, setMonth] = useState('');
+
+  const [editingCouponId, setEditingCouponId] = useState<string | null>(null);
+  const [couponForm, setCouponForm] = useState({ code: '', discount: '', type: 'fixed', maxDiscount: '' });
+
+  useEffect(() => {
+    // Set default month to current local month
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    setMonth(`${now.getFullYear()}-${mm}`);
+  }, []);
   const [restSortBy, setRestSortBy] = useState('totalSales');
   const [applications, setApplications] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -35,15 +59,19 @@ export function SuperAdminDashboard() {
       return;
     }
     fetchData();
-  }, [period]);
+  }, [period, month]);
 
   const fetchData = async () => {
     try {
+      let statUrl = `/api/admin/stats?period=${period}`;
+      if (period === 'monthly' && month) {
+        statUrl += `&month=${month}`;
+      }
       const [restRes, coupRes, settRes, statRes, appRes, jobRes] = await Promise.all([
         fetchWithAuth('/api/restaurants/all'),
         fetchWithAuth('/api/superadmin/coupons'),
         fetchWithAuth('/api/superadmin/settings'),
-        fetchWithAuth(`/api/admin/stats?period=${period}`),
+        fetchWithAuth(statUrl),
         fetchWithAuth('/api/superadmin/applications'),
         fetchWithAuth('/api/jobs')
       ]);
@@ -137,33 +165,55 @@ export function SuperAdminDashboard() {
     }
   };
 
-  const createCoupon = async (e: React.FormEvent<HTMLFormElement>) => {
+  const submitCoupon = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const newCoupon = {
-      code: (formData.get('code') as string).toUpperCase(),
-      discount: Number(formData.get('discount')),
-      type: formData.get('type')
+    if (!couponForm.code.trim() || !couponForm.discount) return;
+    
+    const newCoupon: any = {
+      code: couponForm.code.toUpperCase(),
+      discount: Number(couponForm.discount),
+      type: couponForm.type
     };
+    if (couponForm.type === 'percentage' && couponForm.maxDiscount) {
+      newCoupon.maxDiscount = Number(couponForm.maxDiscount);
+    }
+
     try {
-      const res = await fetchWithAuth(`/api/superadmin/coupons`, {
-        method: 'POST',
+      const url = editingCouponId 
+        ? `/api/superadmin/coupons/${editingCouponId}` 
+        : `/api/superadmin/coupons`;
+      
+      const res = await fetchWithAuth(url, {
+        method: editingCouponId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newCoupon)
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to add coupon');
-      e.currentTarget.reset();
+      if (!res.ok) throw new Error(data.error || 'Failed to save coupon');
       
-      // Update local state directly with the returned coupon
+      setEditingCouponId(null);
+      setCouponForm({ code: '', discount: '', type: 'fixed', maxDiscount: '' });
+      
       setCoupons(prev => {
-        // Only add if not already in the list
+        if (editingCouponId) {
+          return prev.map(c => c._id === editingCouponId ? data.coupon : c);
+        }
         if (prev.find(c => c.code === data.coupon.code)) return prev;
         return [...prev, data.coupon];
       });
     } catch (err: any) {
-      alert(err.message || 'Failed to add coupon');
+      alert(err.message || 'Failed to save coupon');
     }
+  };
+
+  const handleEditCoupon = (coupon: any) => {
+    setEditingCouponId(coupon._id);
+    setCouponForm({
+      code: coupon.code,
+      discount: String(coupon.discount),
+      type: coupon.type,
+      maxDiscount: coupon.maxDiscount ? String(coupon.maxDiscount) : ''
+    });
   };
 
   return (
@@ -227,12 +277,27 @@ export function SuperAdminDashboard() {
           >
             <Briefcase className="w-5 h-5" /> Manage Jobs
           </button>
+          <button 
+            onClick={() => handleTabClick('reviews')} 
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'reviews' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+          >
+            <MessageSquare className="w-5 h-5" /> Reviews
+          </button>
+          <button 
+            onClick={() => handleTabClick('orders')} 
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'orders' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+          >
+            <Receipt className="w-5 h-5" /> Orders
+          </button>
         </nav>
         <div className="p-4 border-t border-slate-800">
            <button onClick={() => {
               localStorage.removeItem('token');
               navigate('/superadmin/login');
-           }} className="text-slate-400 hover:text-white text-sm">Logout</button>
+           }} className="text-slate-400 hover:text-white flex items-center justify-start gap-3 px-4 w-full py-3 hover:bg-slate-800 rounded-lg group transition-colors text-sm font-medium">
+              <LogOut className="w-5 h-5 text-slate-400 group-hover:text-red-400 transition-colors" />
+              <span>Log Out</span>
+           </button>
         </div>
       </aside>
 
@@ -301,80 +366,109 @@ export function SuperAdminDashboard() {
         )}
 
         {activeTab === 'jobs' && (
-          <div className="space-y-8">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-brand-500" /> Post New Job
-              </h3>
-              <form onSubmit={postJob} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <input name="title" placeholder="Job Title" required className="px-4 py-2 border rounded-lg outline-none focus:border-brand-500" />
-                <select name="type" className="px-4 py-2 border rounded-lg outline-none focus:border-brand-500">
-                  <option value="Full-time">Full-time</option>
-                  <option value="Part-time">Part-time</option>
-                  <option value="Contract">Contract</option>
-                </select>
-                <input name="location" placeholder="Location e.g. Remote" required className="px-4 py-2 border rounded-lg outline-none focus:border-brand-500" />
-                <button type="submit" className="md:col-span-3 py-2 bg-brand-500 text-white rounded-lg font-bold hover:bg-brand-600 transition-colors">
-                  Post Job
-                </button>
-              </form>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+               <div className="p-6 border-b border-slate-100 bg-slate-50">
+                  <h3 className="font-bold text-slate-800 text-lg">Active Postings</h3>
+               </div>
+               <div className="p-6 grid grid-cols-1 gap-4">
+                 {jobs.map(job => (
+                   <div key={job._id} className="relative flex items-center justify-between p-5 bg-gradient-to-r from-brand-50 to-white border-2 border-brand-100 rounded-xl overflow-hidden group">
+                     <div className="absolute left-0 top-0 bottom-0 w-2 bg-brand-500"></div>
+                     <div>
+                       <h4 className="font-black text-xl text-slate-800 tracking-tight mb-1">{job.title}</h4>
+                       <p className="text-sm font-semibold text-brand-600 uppercase tracking-wide">{job.type} • {job.location}</p>
+                     </div>
+                     <button onClick={() => deleteJob(job._id)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors shadow-sm focus:ring-2 focus:ring-red-200" title="Delete Job">
+                       <Trash2 className="w-4 h-4" />
+                     </button>
+                   </div>
+                 ))}
+                 {jobs.length === 0 && (
+                   <div className="text-center py-10 text-slate-400 font-medium">No active job postings.</div>
+                 )}
+               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="p-4 border-b border-slate-100 bg-slate-50">
-                <h3 className="font-bold text-slate-800 text-lg">Active Postings</h3>
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-fit">
+              <div className="p-6 border-b border-slate-100">
+                 <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                    <Plus className="w-5 h-5 text-brand-500" /> Post New Job
+                 </h3>
               </div>
-              <div className="divide-y divide-slate-100">
-                {jobs.length === 0 ? <div className="p-8 text-center text-slate-500">No active job postings.</div> : jobs.map(job => (
-                  <div key={job._id} className="p-4 flex items-center justify-between hover:bg-slate-50">
-                    <div>
-                      <h4 className="font-bold text-slate-900">{job.title}</h4>
-                      <p className="text-sm text-slate-500">{job.type} • {job.location}</p>
-                    </div>
-                    <button onClick={() => deleteJob(job._id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <form onSubmit={postJob} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Job Title</label>
+                  <input name="title" placeholder="e.g. Senior Frontend Engineer" required className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Job Type</label>
+                  <select name="type" className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 bg-white">
+                    <option value="Full-time">Full-time</option>
+                    <option value="Part-time">Part-time</option>
+                    <option value="Contract">Contract</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
+                  <input name="location" placeholder="e.g. Remote, NY" required className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <button type="submit" className="w-full bg-brand-500 text-white font-medium py-3 rounded-lg hover:bg-brand-600 transition-colors mt-4">
+                  Publish Job Posting
+                </button>
+              </form>
             </div>
           </div>
         )}
 
         {activeTab === 'dashboard' && (
           <div className="space-y-8">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h3 className="text-xl font-bold text-slate-800">Financial Metrics</h3>
-              <div className="bg-white rounded-lg p-1 border border-slate-200">
-                <button onClick={() => setPeriod('lifetime')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${period === 'lifetime' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>Lifetime</button>
-                <button onClick={() => setPeriod('monthly')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${period === 'monthly' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>Monthly</button>
+              <div className="flex items-center gap-4">
+                {period === 'monthly' && (
+                  <input 
+                    type="month" 
+                    value={month} 
+                    onChange={(e) => setMonth(e.target.value)}
+                    className="px-3 py-1.5 border border-slate-200 bg-white rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                )}
+                <div className="bg-white rounded-lg p-1 border border-slate-200">
+                  <button onClick={() => setPeriod('lifetime')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${period === 'lifetime' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>Lifetime</button>
+                  <button onClick={() => setPeriod('monthly')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${period === 'monthly' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>Monthly</button>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <p className="text-sm text-slate-500 mb-2">Total System Revenue</p>
+                <p className="text-sm text-slate-500 mb-2">Total System Volume</p>
                 <p className="text-3xl font-black text-slate-900">₹{(stats.totalRevenue || 0).toFixed(2)}</p>
               </div>
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <p className="text-sm text-slate-500 mb-2">Delivery Charges</p>
-                <p className="text-3xl font-black text-slate-900">₹{(stats.totalDeliveryCharge || 0).toFixed(2)}</p>
-              </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <p className="text-sm text-slate-500 mb-2">Platform Fees</p>
+                <p className="text-sm text-slate-500 mb-2">Platform Fees (Customer)</p>
                 <p className="text-3xl font-black text-slate-900">₹{(stats.totalPlatformFee || 0).toFixed(2)}</p>
               </div>
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <p className="text-sm text-slate-500 mb-2">Coupon Expenses</p>
-                <p className="text-3xl font-black text-red-600">₹{(stats.totalDiscount || 0).toFixed(2)}</p>
+                <p className="text-sm text-slate-500 mb-2">Platform Fees (Restaurant)</p>
+                <p className="text-3xl font-black text-slate-900">₹{(stats.totalRestaurantPlatformFee || 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <p className="text-sm text-slate-500 mb-2">Coupon Expenses (50%)</p>
+                <p className="text-3xl font-black text-red-600">₹{((stats.totalDiscount || 0) / 2).toFixed(2)}</p>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <p className="text-sm text-slate-500 mb-2">Taxes Collected</p>
+                <p className="text-3xl font-black text-slate-900">₹{(stats.totalTax || 0).toFixed(2)}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-brand-500 flex flex-col justify-center">
                  <p className="text-sm text-slate-500 mb-2">Platform Net Profit/Loss</p>
-                 <p className={`text-4xl font-black ${(stats.totalDeliveryCharge + stats.totalPlatformFee - stats.totalDiscount) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                   ₹{((stats.totalDeliveryCharge || 0) + (stats.totalPlatformFee || 0) - (stats.totalDiscount || 0)).toFixed(2)}
+                 <p className={`text-4xl font-black ${((stats.totalPlatformFee || 0) + (stats.totalRestaurantPlatformFee || 0) - ((stats.totalDiscount || 0) / 2)) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                   ₹{((stats.totalPlatformFee || 0) + (stats.totalRestaurantPlatformFee || 0) - ((stats.totalDiscount || 0) / 2)).toFixed(2)}
                  </p>
                </div>
                <div className="grid grid-cols-2 gap-4">
@@ -459,97 +553,206 @@ export function SuperAdminDashboard() {
         )}
 
         {activeTab === 'settings' && (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 max-w-xl">
-            <div className="p-6 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800">Global Charges</h3>
-            </div>
-            <form onSubmit={updateSettings} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Standard Delivery Charge (₹)</label>
-                <input 
-                  type="number" 
-                  value={settings.deliveryCharge}
-                  onChange={(e) => setSettings({...settings, deliveryCharge: Number(e.target.value)})}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Platform Operations Fee (₹)</label>
-                <input 
-                  type="number" 
-                  value={settings.platformFee}
-                  onChange={(e) => setSettings({...settings, platformFee: Number(e.target.value)})}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Default Tax (%)</label>
-                <input 
-                  type="number" 
-                  value={settings.taxRate}
-                  onChange={(e) => setSettings({...settings, taxRate: Number(e.target.value)})}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
-                />
-              </div>
-              <button className="w-full bg-slate-900 text-white font-medium py-3 rounded-lg hover:bg-slate-800 transition-colors">
-                Save Changes
-              </button>
-              {saveMessage && (
-                <div className={`p-3 rounded-lg text-sm text-center ${saveMessage.includes('successfully') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                  {saveMessage}
+          <div className="max-w-4xl space-y-8 animate-in fade-in slide-in-from-bottom-4">
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight">Platform Financial Settings</h2>
+            
+            <form onSubmit={updateSettings} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Customer Facing Settings */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 bg-slate-50">
+                    <h3 className="font-bold text-slate-800 text-lg">Customer Charges</h3>
+                    <p className="text-sm text-slate-500 mt-1">Fees charged directly to customers on every order.</p>
+                  </div>
+                  <div className="p-6 space-y-5">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Standard Delivery Fee</label>
+                      <p className="text-xs text-slate-500 mb-2">Base delivery amount collected from customer.</p>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 font-medium">₹</span>
+                        <input 
+                          type="number" 
+                          value={settings.deliveryCharge}
+                          onChange={(e) => setSettings({...settings, deliveryCharge: Number(e.target.value)})}
+                          className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all font-medium text-slate-900"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Platform Operations Fee</label>
+                      <p className="text-xs text-slate-500 mb-2">Fixed fee for app maintenance & service.</p>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 font-medium">₹</span>
+                        <input 
+                          type="number" 
+                          value={settings.platformFee}
+                          onChange={(e) => setSettings({...settings, platformFee: Number(e.target.value)})}
+                          className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all font-medium text-slate-900"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Government Tax Rate</label>
+                      <p className="text-xs text-slate-500 mb-2">GST / VAT percentage applied to subtotal.</p>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-slate-400 font-medium">%</span>
+                        <input 
+                          type="number" 
+                          value={settings.taxRate}
+                          onChange={(e) => setSettings({...settings, taxRate: Number(e.target.value)})}
+                          className="w-full pl-4 pr-8 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all font-medium text-slate-900"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              )}
+
+                {/* Restaurant Facing Settings */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 bg-slate-50">
+                    <h3 className="font-bold text-slate-800 text-lg">Restaurant Commissions</h3>
+                    <p className="text-sm text-slate-500 mt-1">Platform fees collected from restaurant payouts.</p>
+                  </div>
+                  <div className="p-6 space-y-5">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Commission Percentage</label>
+                      <p className="text-xs text-slate-500 mb-2">Percentage fee charged on item subtotal.</p>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-slate-400 font-medium">%</span>
+                        <input 
+                          type="number" 
+                          value={settings.restaurantFeePercent ?? 5}
+                          onChange={(e) => setSettings({...settings, restaurantFeePercent: Number(e.target.value)})}
+                          className="w-full pl-4 pr-8 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all font-medium text-slate-900"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Fixed Order Fee</label>
+                      <p className="text-xs text-slate-500 mb-2">Flat amount charged to restaurant per order.</p>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 font-medium">₹</span>
+                        <input 
+                          type="number" 
+                          value={settings.restaurantFeeFixed ?? 10}
+                          onChange={(e) => setSettings({...settings, restaurantFeeFixed: Number(e.target.value)})}
+                          className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all font-medium text-slate-900"
+                        />
+                      </div>
+                    </div>
+                    <div className="p-4 bg-brand-50 border border-brand-100 rounded-xl mt-4">
+                      <div className="flex gap-3">
+                        <svg className="w-5 h-5 text-brand-600 shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        <div className="text-sm text-brand-800">
+                          <span className="font-bold block mb-1">How it is calculated:</span>
+                          Total Platform Fee = (Subtotal × {settings.restaurantFeePercent ?? 5}%) + ₹{settings.restaurantFeeFixed ?? 10}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <button type="submit" className="w-full sm:w-auto px-8 py-3 bg-brand-500 text-white font-medium rounded-lg hover:bg-brand-600 transition-colors shrink-0">
+                  Save Configuration
+                </button>
+                <div className="h-10 flex items-center">
+                  {saveMessage && (
+                    <span className={`text-sm font-bold px-4 py-2 rounded-lg ${saveMessage.includes('Failed') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'} animate-in fade-in`}>
+                      {saveMessage}
+                    </span>
+                  )}
+                </div>
+              </div>
             </form>
           </div>
         )}
 
         {activeTab === 'coupons' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white rounded-xl shadow-sm border border-slate-200">
                <div className="p-6 border-b border-slate-100">
                   <h3 className="font-bold text-slate-800">Active Coupons</h3>
                </div>
-               <div className="p-6 space-y-4">
-                 {coupons.map(coupon => (
-                   <div key={coupon._id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-lg">
-                     <div>
-                       <p className="font-bold text-slate-800 uppercase">{coupon.code}</p>
-                       <p className="text-sm text-slate-500">
-                         {coupon.type === 'fixed' ? `₹${coupon.discount} OFF` : `${coupon.discount}% OFF`}
-                       </p>
-                     </div>
-                     <button onClick={() => deleteCoupon(coupon._id)} className="text-red-500 text-sm hover:text-red-700">Delete</button>
-                   </div>
-                 ))}
-               </div>
+                <div className="p-6 grid grid-cols-1 gap-4">
+                  {coupons.map(coupon => (
+                    <div key={coupon._id} className="relative flex items-center justify-between p-5 bg-gradient-to-r from-brand-50 to-white border-2 border-brand-100 rounded-xl overflow-hidden group">
+                      <div className={`absolute left-0 top-0 bottom-0 w-2 ${editingCouponId === coupon._id ? 'bg-orange-500' : 'bg-brand-500'}`}></div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-black text-xl text-slate-800 uppercase tracking-wider">{coupon.code}</p>
+                          <span className="px-2 py-0.5 bg-brand-500 text-white text-[10px] font-bold rounded uppercase tracking-widest leading-none flex items-center">Active</span>
+                        </div>
+                        <p className="text-sm font-semibold text-brand-600">
+                          {coupon.type === 'fixed' ? `₹${coupon.discount} Flat Discount` : `${coupon.discount}% Off${coupon.maxDiscount ? ` up to ₹${coupon.maxDiscount}` : ''}`}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleEditCoupon(coupon)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white border border-slate-200 text-slate-500 hover:bg-orange-50 hover:text-orange-600 transition-colors shadow-sm focus:ring-2 focus:ring-orange-200" title="Edit Coupon">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => deleteCoupon(coupon._id)} className="w-10 h-10 rounded-full flex items-center justify-center bg-white border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors shadow-sm focus:ring-2 focus:ring-red-200" title="Delete Coupon">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {coupons.length === 0 && (
+                    <div className="text-center py-10 text-slate-400 font-medium">No coupons active. Create one to attract users!</div>
+                  )}
+                </div>
             </div>
             
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-fit">
-               <div className="p-6 border-b border-slate-100">
-                  <h3 className="font-bold text-slate-800">Create New</h3>
+               <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="font-bold text-slate-800">{editingCouponId ? 'Edit Coupon' : 'Create New Coupon'}</h3>
+                  {editingCouponId && (
+                     <button onClick={() => {
+                        setEditingCouponId(null);
+                        setCouponForm({ code: '', discount: '', type: 'fixed', maxDiscount: '' });
+                     }} className="text-sm text-slate-500 hover:text-slate-800 font-medium">
+                        Cancel Edit
+                     </button>
+                  )}
                </div>
-               <form onSubmit={createCoupon} className="p-6 space-y-4">
+               <form onSubmit={submitCoupon} className="p-6 space-y-4">
                  <div>
                    <label className="block text-sm font-medium text-slate-700 mb-1">Coupon Code</label>
-                   <input required name="code" className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500" placeholder="e.g. SUMMER20" />
+                   <input required value={couponForm.code} onChange={e => setCouponForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500" placeholder="e.g. SUMMER20" />
                  </div>
-                 <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Discount Value</label>
-                   <input required type="number" name="discount" className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500" placeholder="e.g. 50" />
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-1">Discount Type</label>
+                     <select value={couponForm.type} onChange={e => setCouponForm(prev => ({ ...prev, type: e.target.value }))} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 bg-white">
+                       <option value="fixed">Fixed Amount (₹)</option>
+                       <option value="percentage">Percentage (%)</option>
+                     </select>
+                   </div>
+                   <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-1">{couponForm.type === 'percentage' ? 'Discount (%)' : 'Discount (₹)'}</label>
+                     <input required type="number" min="0" max={couponForm.type === 'percentage' ? 100 : undefined} value={couponForm.discount} onChange={e => setCouponForm(prev => ({ ...prev, discount: e.target.value }))} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500" placeholder="e.g. 50" />
+                   </div>
                  </div>
-                 <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Discount Type</label>
-                   <select name="type" className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 bg-white">
-                     <option value="fixed">Fixed Amount (₹)</option>
-                     <option value="percentage">Percentage (%)</option>
-                   </select>
-                 </div>
-                 <button className="w-full bg-brand-500 text-white font-medium py-3 rounded-lg hover:bg-brand-600 transition-colors mt-4">
-                    Create Coupon
+                 {couponForm.type === 'percentage' && (
+                   <div className="animate-in fade-in slide-in-from-top-2">
+                     <label className="block text-sm font-medium text-slate-700 mb-1">Maximum Discount per Order (₹)</label>
+                     <input type="number" min="0" value={couponForm.maxDiscount} onChange={e => setCouponForm(prev => ({ ...prev, maxDiscount: e.target.value }))} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500" placeholder="e.g. 150 (Leave Empty for No Limit)" />
+                   </div>
+                 )}
+                 <button className={`w-full text-white font-medium py-3 rounded-lg transition-colors mt-4 ${editingCouponId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-brand-500 hover:bg-brand-600'}`}>
+                    {editingCouponId ? 'Save Changes' : 'Create Coupon'}
                  </button>
                </form>
             </div>
           </div>
+        )}
+
+        {activeTab === 'reviews' && (
+          <SuperAdminReviews key={tabKey} />
+        )}
+        {activeTab === 'orders' && (
+          <SuperAdminOrders key={tabKey} />
         )}
       </main>
     </div>

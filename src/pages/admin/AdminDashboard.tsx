@@ -8,14 +8,15 @@ import { MenuManagement } from './MenuManagement';
 import { Analytics } from './Analytics';
 import { Customers } from './Customers';
 import { RestaurantProfile } from './RestaurantProfile';
-import { Store } from 'lucide-react';
+import { RestaurantReviews } from './RestaurantReviews';
+import { Store, MessageSquare } from 'lucide-react';
 
 export function AdminDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
   const [imgError, setImgError] = useState(false);
-  const [restaurantName, setRestaurantName] = useState('Loading...');
+  const [restaurantName, setRestaurantName] = useState('');
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -118,6 +119,7 @@ export function AdminDashboard() {
           <NavItem to="/admin/dashboard/profile" icon={Store} label="Restaurant Profile" />
           <NavItem to="/admin/dashboard/analytics" icon={BarChart3} label="Analytics" />
           <NavItem to="/admin/dashboard/customers" icon={Users} label="Customers" />
+          <NavItem to="/admin/dashboard/reviews" icon={MessageSquare} label="Reviews" />
         </nav>
         <div className="p-4 border-t border-slate-800">
           <div className="flex items-center gap-3 p-2 bg-slate-800 rounded-lg group cursor-pointer" onClick={handleLogout}>
@@ -188,6 +190,7 @@ export function AdminDashboard() {
             <Route path="profile" element={<RestaurantProfile />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="customers" element={<Customers />} />
+            <Route path="reviews" element={<RestaurantReviews />} />
           </Routes>
         </div>
       </main>

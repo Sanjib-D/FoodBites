@@ -173,7 +173,7 @@ let mockCoupons = [
   { _id: "c1", code: "BITES50", discount: 50, type: "fixed", active: true },
   { _id: "c2", code: "10OFF", discount: 10, type: "percentage", active: true }
 ];
-let mockSettings = { deliveryCharge: 40, platformFee: 25, taxRate: 5 };
+let mockSettings = { deliveryCharge: 40, platformFee: 25, taxRate: 5, restaurantFeePercent: 5, restaurantFeeFixed: 10 };
 
 // In-memory orders for demonstration
 let mockOrders: any[] = [];
@@ -186,6 +186,9 @@ const restaurantSchema = new mongoose.Schema({
   cuisine: String,
   rating: Number,
   deliveryTime: String,
+  address: String,
+  mapsUrl: String,
+  about: String,
   image: String,
   tags: [String],
   status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'] },
@@ -212,6 +215,7 @@ const orderSchema = new mongoose.Schema({
   subtotal: Number,
   deliveryCharge: Number,
   platformFee: Number,
+  restaurantPlatformFee: { type: Number, default: 0 },
   discount: Number,
   tax: Number,
   status: { type: String, default: 'Pending' },
@@ -243,12 +247,13 @@ const reviewSchema = new mongoose.Schema({
   orderId: String,
   rating: Number,
   comment: String,
+  isFlagged: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 const Review = mongoose.model('Review', reviewSchema);
 
 let mockReviews: any[] = [
-  { _id: "r1", restaurantId: "1", customerName: "Alice S.", orderId: "ord_1", rating: 5, comment: "Best burgers in town!", createdAt: new Date() }
+  { _id: "r1", restaurantId: "1", customerName: "Alice S.", orderId: "ord_1", rating: 5, comment: "Best burgers in town!", isFlagged: false, createdAt: new Date() }
 ];
 
 const jobApplicationSchema = new mongoose.Schema({
@@ -295,6 +300,7 @@ const couponSchema = new mongoose.Schema({
   _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   code: { type: String, unique: true },
   discount: Number,
+  maxDiscount: Number, // For percentage discount
   type: { type: String, enum: ['fixed', 'percentage'] },
   active: { type: Boolean, default: true }
 });
@@ -303,8 +309,10 @@ const Coupon = mongoose.model('Coupon', couponSchema);
 const settingsSchema = new mongoose.Schema({
   _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   deliveryCharge: { type: Number, default: 40 },
-  platformFee: { type: Number, default: 25 },
-  taxRate: { type: Number, default: 5 }
+  platformFee: { type: Number, default: 25 }, // Paid by Customer
+  taxRate: { type: Number, default: 5 },
+  restaurantFeePercent: { type: Number, default: 5 }, // Paid by Restaurant
+  restaurantFeeFixed: { type: Number, default: 10 }   // Paid by Restaurant
 });
 const Settings = mongoose.model('Settings', settingsSchema);
 
@@ -519,6 +527,57 @@ async function startServer() {
     res.json({ success: true, review: newReview });
   });
 
+  app.put("/api/restaurants/:id/reviews/:reviewId/flag", authenticate(['admin', 'superadmin']), async (req: any, res: any) => {
+    if (isDbConnected) {
+      try {
+        const review = await Review.findByIdAndUpdate(req.params.reviewId, { isFlagged: true }, { new: true });
+        return res.json({ success: true, review });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to flag review" });
+      }
+    }
+    const idx = mockReviews.findIndex(r => r._id === req.params.reviewId);
+    if (idx !== -1) {
+      mockReviews[idx].isFlagged = true;
+      res.json({ success: true, review: mockReviews[idx] });
+    } else {
+      res.status(404).json({ error: "Review not found" });
+    }
+  });
+
+  app.get("/api/superadmin/reviews", authenticate(['superadmin']), async (req: any, res: any) => {
+    let filter = {};
+    if (req.query.restaurantId) {
+      filter = { restaurantId: String(req.query.restaurantId) };
+    }
+    if (isDbConnected) {
+      try {
+        const reviews = await Review.find(filter).sort({ createdAt: -1 });
+        return res.json(reviews);
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to fetch reviews" });
+      }
+    }
+    let filteredMock = mockReviews;
+    if (req.query.restaurantId) {
+      filteredMock = filteredMock.filter(r => String(r.restaurantId) === String(req.query.restaurantId));
+    }
+    res.json([...filteredMock].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+  });
+
+  app.delete("/api/superadmin/reviews/:id", authenticate(['superadmin']), async (req: any, res: any) => {
+    if (isDbConnected) {
+      try {
+        await Review.findByIdAndDelete(req.params.id);
+        return res.json({ success: true });
+      } catch (err) {
+        return res.status(500).json({ error: "Failed to delete review" });
+      }
+    }
+    mockReviews = mockReviews.filter(r => r._id !== req.params.id);
+    res.json({ success: true });
+  });
+
   // Auth Routes
   app.post('/api/auth/admin/register', async (req, res) => {
     try {
@@ -710,7 +769,7 @@ async function startServer() {
     }
     try {
       if (isDbConnected) {
-        const orders = await Order.find({ "customerId": req.params.id }).populate('restaurantId') || [];
+        const orders = await Order.find({ "customerId": req.params.id }).sort({ createdAt: -1 }).populate('restaurantId') || [];
         return res.json(orders);
       }
       res.json([]);
@@ -740,13 +799,13 @@ async function startServer() {
     let approved: any[] = [];
     if (isDbConnected) {
       try {
-        approved = await Restaurant.find({ status: { $ne: 'rejected' } });
-        if (approved.length === 0) approved = mockRestaurants.filter(r => r.status !== 'rejected');
+        approved = await Restaurant.find({ status: 'approved' });
+        if (approved.length === 0) approved = mockRestaurants.filter(r => r.status === 'approved');
       } catch (err) {
          return res.status(500).json({ error: "Database error" });
       }
     } else {
-      approved = mockRestaurants.filter(r => r.status !== 'rejected');
+      approved = mockRestaurants.filter(r => r.status === 'approved');
     }
 
     // Append dynamic ratings
@@ -828,6 +887,8 @@ async function startServer() {
       if (settings) {
         settings.deliveryCharge = req.body.deliveryCharge;
         settings.platformFee = req.body.platformFee;
+        settings.restaurantFeePercent = req.body.restaurantFeePercent;
+        settings.restaurantFeeFixed = req.body.restaurantFeeFixed;
         await settings.save();
       } else {
         settings = await Settings.create(req.body);
@@ -877,6 +938,35 @@ async function startServer() {
     }
     mockCoupons = mockCoupons.filter(c => c._id !== req.params.id);
     res.json({ success: true });
+  });
+
+  app.put("/api/superadmin/coupons/:id", async (req, res) => {
+    if (isDbConnected) {
+      try {
+        const coupon = await Coupon.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        return res.json({ success: true, coupon });
+      } catch (err: any) {
+        if (err.code === 11000) {
+          return res.status(400).json({ error: "Coupon code must be unique." });
+        }
+        return res.status(500).json({ error: "Failed to update coupon" });
+      }
+    }
+    
+    // Check if code exists and is not the current one
+    if (req.body.code) {
+      const exists = mockCoupons.some(c => c.code === req.body.code && c._id !== req.params.id);
+      if (exists) {
+        return res.status(400).json({ error: "Coupon code already exists." });
+      }
+    }
+
+    const index = mockCoupons.findIndex(c => c._id === req.params.id);
+    if (index !== -1) {
+      mockCoupons[index] = { ...mockCoupons[index], ...req.body };
+      return res.json({ success: true, coupon: mockCoupons[index] });
+    }
+    res.status(404).json({ error: "Coupon not found" });
   });
 
   // Validate coupon
@@ -935,6 +1025,8 @@ async function startServer() {
     let taxRate = 5;
     let deliveryCharge = 40;
     let platformFee = 25;
+    let restaurantFeePercent = 5;
+    let restaurantFeeFixed = 10;
     
     if (isDbConnected) {
        const settings = await Settings.findOne();
@@ -942,14 +1034,19 @@ async function startServer() {
           taxRate = settings.taxRate || 5;
           deliveryCharge = settings.deliveryCharge || 40;
           platformFee = settings.platformFee || 25;
+          restaurantFeePercent = typeof settings.restaurantFeePercent === 'number' ? settings.restaurantFeePercent : 5;
+          restaurantFeeFixed = typeof settings.restaurantFeeFixed === 'number' ? settings.restaurantFeeFixed : 10;
        }
     } else {
        taxRate = mockSettings.taxRate || 5;
        deliveryCharge = mockSettings.deliveryCharge || 40;
        platformFee = mockSettings.platformFee || 25;
+       restaurantFeePercent = typeof mockSettings.restaurantFeePercent === 'number' ? mockSettings.restaurantFeePercent : 5;
+       restaurantFeeFixed = typeof mockSettings.restaurantFeeFixed === 'number' ? mockSettings.restaurantFeeFixed : 10;
     }
 
     const calculatedTax = Math.max(0, (expectedSubtotal - (orderData.discount || 0)) * (taxRate / 100));
+    const expectedRestaurantPlatformFee = (expectedSubtotal * (restaurantFeePercent / 100)) + restaurantFeeFixed;
     const calculatedTotal = expectedSubtotal + deliveryCharge + platformFee + calculatedTax - (orderData.discount || 0);
     
     // We update the orderData with verified numbers
@@ -959,6 +1056,7 @@ async function startServer() {
       tax: calculatedTax,
       deliveryCharge,
       platformFee,
+      restaurantPlatformFee: expectedRestaurantPlatformFee,
       total: expectedSubtotal ? calculatedTotal : orderData.total,
       restaurantId 
     };
@@ -1082,6 +1180,8 @@ async function startServer() {
     let filter: any = {};
     if (req.user?.role === 'admin') {
       filter.restaurantId = req.user.restaurantId || req.user.id;
+    } else if (req.query.restaurantId) {
+      filter.restaurantId = req.query.restaurantId;
     }
     
     if (isDbConnected) {
@@ -1097,6 +1197,8 @@ async function startServer() {
     if (req.user?.role === 'admin') {
       const restId = req.user.restaurantId || req.user.id;
       orders = orders.filter(o => o.restaurantId === restId);
+    } else if (req.query.restaurantId) {
+      orders = orders.filter(o => String(o.restaurantId) === String(req.query.restaurantId));
     }
     res.json(orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
   });
@@ -1121,15 +1223,48 @@ async function startServer() {
   });
 
   app.get('/api/admin/customers', authenticate(['admin', 'superadmin']), async (req: any, res: any) => {
+    let filter: any = {};
+    if (req.user?.role === 'admin') {
+      filter.restaurantId = req.user.restaurantId || req.user.id;
+    }
+
     if (isDbConnected) {
       try {
-        const customers = await Customer.find().sort({ _id: -1 });
+        const orders = await Order.find(filter).select('customerId customerInfo -_id');
+        const customerIds = [...new Set(orders.map(o => o.customerId).filter(id => id))];
+        const emails = [...new Set(orders.map(o => o.customerInfo?.email).filter(e => e))];
+        const phones = [...new Set(orders.map(o => o.customerInfo?.phone).filter(p => p))];
+
+        const customers = await Customer.find({
+          $or: [
+            { _id: { $in: customerIds } },
+            { email: { $in: emails } },
+            { phone: { $in: phones } }
+          ]
+        }).sort({ _id: -1 });
+        
         return res.json(customers);
       } catch (err) {
         return res.status(500).json({ error: "Database error" });
       }
     }
-    res.json(mockCustomers.slice().reverse());
+    
+    // In-memory logic
+    const orders = mockOrders;
+    let relevantOrders = orders;
+    if (req.user?.role === 'admin') {
+      const restId = req.user.restaurantId || req.user.id;
+      relevantOrders = relevantOrders.filter(o => o.restaurantId === restId);
+    }
+    
+    const customerIds = new Set(relevantOrders.map(o => o.customerId).filter(Boolean));
+    const emails = new Set(relevantOrders.map(o => o.customerInfo?.email).filter(Boolean));
+    
+    const filteredCustomers = mockCustomers.filter(c => 
+      customerIds.has(c._id) || emails.has(c.email)
+    ).reverse();
+    
+    res.json(filteredCustomers);
   });
 
   app.patch('/api/admin/orders/:id/status', async (req, res) => {
@@ -1285,11 +1420,24 @@ async function startServer() {
       filter.restaurantId = req.user.restaurantId || req.user.id;
     }
     
-    if (req.query.period === 'monthly') {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0,0,0,0);
-      filter.createdAt = { $gte: startOfMonth };
+    let startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0,0,0,0);
+    let endOfMonth = new Date();
+    endOfMonth.setMonth(startOfMonth.getMonth() + 1);
+    endOfMonth.setDate(0);
+    endOfMonth.setHours(23,59,59,999);
+
+    if (req.query.month) {
+      const [yyyy, mm] = req.query.month.split('-');
+      if (yyyy && mm) {
+        startOfMonth = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
+        endOfMonth = new Date(parseInt(yyyy), parseInt(mm), 0, 23, 59, 59, 999);
+      }
+    }
+
+    if (req.query.period === 'monthly' || req.query.month) {
+      filter.createdAt = { $gte: startOfMonth, $lte: endOfMonth };
     }
 
     let orders = [];
@@ -1301,11 +1449,11 @@ async function startServer() {
         const restId = req.user.restaurantId || req.user.id;
         orders = orders.filter(o => o.restaurantId === restId);
       }
-      if (req.query.period === 'monthly') {
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0,0,0,0);
-        orders = orders.filter(o => new Date(o.createdAt || new Date()) >= startOfMonth);
+      if (req.query.period === 'monthly' || req.query.month) {
+        orders = orders.filter(o => {
+          const d = new Date(o.createdAt || new Date());
+          return d >= startOfMonth && d <= endOfMonth;
+        });
       }
     }
     
@@ -1314,9 +1462,12 @@ async function startServer() {
     const pendingOrders = orders.filter(o => o.status === 'Pending').length;
     const completedOrders = orders.filter(o => o.status === 'Delivered').length;
 
+    const totalSubtotal = orders.reduce((sum, order) => sum + (order.subtotal || 0), 0);
     const totalDeliveryCharge = orders.reduce((sum, order) => sum + (order.deliveryCharge || 0), 0);
     const totalPlatformFee = orders.reduce((sum, order) => sum + (order.platformFee || 0), 0);
+    const totalRestaurantPlatformFee = orders.reduce((sum, order) => sum + (order.restaurantPlatformFee || 0), 0);
     const totalDiscount = orders.reduce((sum, order) => sum + (order.discount || 0), 0);
+    const totalTax = orders.reduce((sum, order) => sum + (order.tax || 0), 0);
 
     let restaurantStats: any = {};
     for (const o of orders) {
@@ -1341,9 +1492,12 @@ async function startServer() {
       totalOrders,
       pendingOrders,
       completedOrders,
+      totalSubtotal,
       totalDeliveryCharge,
       totalPlatformFee,
+      totalRestaurantPlatformFee,
       totalDiscount,
+      totalTax,
       restaurantStats: Object.values(restaurantStats)
     });
   });

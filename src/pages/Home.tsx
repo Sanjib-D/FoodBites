@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { getCloudinaryUrl } from '../utils/cloudinary';
+import { LoadingScreen } from '../components/Loader';
 
 interface Restaurant {
   _id: string;
@@ -58,6 +59,12 @@ export function Home() {
   }, [customer]);
 
   useEffect(() => {
+    const handleClearSearch = () => setSearchQuery('');
+    window.addEventListener('clear-search', handleClearSearch);
+    return () => window.removeEventListener('clear-search', handleClearSearch);
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       if (searchQuery.trim().length > 1) {
         setIsSearching(true);
@@ -80,7 +87,13 @@ export function Home() {
   }, [searchQuery]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12"
+    >
       {activeOrder && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
@@ -148,9 +161,7 @@ export function Home() {
       </div>
 
       {loading && !searchResults && (
-        <div className="flex-1 flex justify-center items-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500"></div>
-        </div>
+        <LoadingScreen />
       )}
 
       {error && !searchResults && (
@@ -213,7 +224,7 @@ export function Home() {
           ))}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 

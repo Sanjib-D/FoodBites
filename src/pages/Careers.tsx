@@ -1,13 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { X, Upload } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { LoadingScreen } from '../components/Loader';
 
 export function Careers() {
   const [selectedJob, setSelectedJob] = useState<{ id: string, title: string } | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/jobs').then(res => res.json()).then(setJobs).catch(console.error);
+    fetch('/api/jobs').then(res => res.json()).then(data => {
+      setJobs(data);
+      setLoading(false);
+    }).catch(err => {
+      console.error(err);
+      setLoading(false);
+    });
   }, []);
 
   const handleApply = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -42,8 +51,16 @@ export function Careers() {
     }
   };
 
+  if (loading) return <LoadingScreen />;
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-16">
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="max-w-4xl mx-auto px-4 py-16"
+    >
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold text-slate-900 mb-4">Join Our Team</h1>
         <p className="text-lg text-slate-600">Help us redefine the food delivery experience.</p>
@@ -69,9 +86,20 @@ export function Careers() {
         ))}
       </div>
 
+      <AnimatePresence>
       {selectedJob && (
-        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
+        >
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
+          >
             <div className="flex justify-between items-center p-6 border-b border-slate-100 shrink-0">
               <h2 className="text-xl font-bold text-slate-800">Apply for {selectedJob.title}</h2>
               <button 
@@ -125,9 +153,10 @@ export function Careers() {
                 </form>
               )}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
-    </div>
+      </AnimatePresence>
+    </motion.div>
   );
 }

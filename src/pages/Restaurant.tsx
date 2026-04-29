@@ -3,9 +3,10 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { Star, Clock, Plus, Minus, ArrowLeft, Filter, User, LogOut, ShoppingBag } from 'lucide-react';
+import { Star, Clock, Plus, Minus, ArrowLeft, Filter, User, LogOut, ShoppingBag, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getCloudinaryUrl } from '../utils/cloudinary';
+import { LoadingScreen } from '../components/Loader';
 
 interface MenuItem {
   _id: string;
@@ -45,11 +46,7 @@ export function Restaurant() {
     : 'Yet to get Review';
 
   if (loadingRest || loadingMenu) {
-    return (
-      <div className="flex-1 flex justify-center items-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500"></div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!restaurant) {
@@ -94,7 +91,13 @@ export function Restaurant() {
   };
 
   return (
-    <div className="flex-1 bg-slate-50 min-h-screen relative">
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="flex-1 bg-slate-50 min-h-screen relative"
+    >
       
       {/* Sticky Shrinking Header */}
       <AnimatePresence>
@@ -183,18 +186,37 @@ export function Restaurant() {
         </div>
         <div className="absolute bottom-8 left-6 md:bottom-12 md:left-12 text-white">
           <h1 className="font-sans text-4xl md:text-6xl font-black mb-4 tracking-tight drop-shadow-md">{restaurant.name}</h1>
-          <div className="flex flex-wrap items-center gap-4 text-sm md:text-base font-medium opacity-90">
-            <span className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full backdrop-blur">
-              <Star className={`w-4 h-4 ${averageRating === 'Yet to get Review' ? 'text-white/50' : 'text-yellow-400 fill-yellow-400'}`} />
-              {averageRating}
-            </span>
-            <span className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full backdrop-blur">
-              <Clock className="w-4 h-4" />
-              {restaurant.deliveryTime}
-            </span>
-            <span className="bg-white/20 px-3 py-1.5 rounded-full backdrop-blur">
-              {restaurant.cuisine}
-            </span>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3 text-sm md:text-base font-medium opacity-90">
+              <span className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full backdrop-blur">
+                <Star className={`w-4 h-4 ${averageRating === 'Yet to get Review' ? 'text-white/50' : 'text-yellow-400 fill-yellow-400'}`} />
+                {averageRating}
+              </span>
+              <span className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full backdrop-blur">
+                <Clock className="w-4 h-4" />
+                {restaurant.deliveryTime}
+              </span>
+              <span className="bg-white/20 px-3 py-1.5 rounded-full backdrop-blur">
+                {restaurant.cuisine}
+              </span>
+            </div>
+            
+            {restaurant.address && (
+              <div className="flex items-center gap-2 text-sm text-white/90">
+                <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-lg backdrop-blur">
+                  <MapPin className="w-4 h-4 shrink-0 text-brand-400" />
+                  <span className="truncate max-w-[200px] md:max-w-none">{restaurant.address}</span>
+                  <a 
+                    href={restaurant.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restaurant.address)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-2 text-brand-400 hover:text-brand-300 font-bold underline decoration-brand-400/50 underline-offset-2 transition-colors whitespace-nowrap"
+                  >
+                    Directions
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -367,6 +389,6 @@ export function Restaurant() {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

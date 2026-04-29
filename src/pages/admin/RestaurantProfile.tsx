@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Save } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
+import { InlineLoader, LoadingScreen } from '../../components/Loader';
 
 export function RestaurantProfile() {
   const restId = localStorage.getItem('restaurantId') || '1';
@@ -8,6 +9,7 @@ export function RestaurantProfile() {
   const [formData, setFormData] = useState<any>({
     name: '',
     cuisine: '',
+    address: '',
     deliveryTime: '',
     minOrder: 0,
     about: '',
@@ -74,7 +76,7 @@ export function RestaurantProfile() {
     }
   };
 
-  if (loading) return <div>Loading profile...</div>;
+  if (loading) return <LoadingScreen />;
 
   return (
     <div className="max-w-4xl mx-auto pb-12">
@@ -150,6 +152,26 @@ export function RestaurantProfile() {
           </div>
 
           <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-slate-700 mb-1">Restaurant Address</label>
+            <input 
+              type="text" name="address" 
+              value={formData.address || ''} onChange={handleChange} 
+              className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500" 
+              placeholder="123 Food Street, City"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-slate-700 mb-1">Google Maps URL</label>
+            <input 
+              type="url" name="mapsUrl" 
+              value={formData.mapsUrl || ''} onChange={handleChange} 
+              className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500" 
+              placeholder="https://maps.google.com/..."
+            />
+          </div>
+
+          <div className="md:col-span-2">
             <label className="block text-sm font-medium text-slate-700 mb-1">About Restaurant</label>
             <textarea 
               name="about" rows={4} 
@@ -173,6 +195,38 @@ export function RestaurantProfile() {
           </button>
         </div>
       </form>
+
+      <div className="mt-8 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="p-6 border-b border-slate-200 bg-slate-50">
+          <h2 className="text-lg font-bold text-slate-800">Platform Agreement & Terms</h2>
+        </div>
+        <div className="p-6 text-sm text-slate-600 space-y-4">
+          <p>
+            By continuing to access and use the Platform Dashboard, you acknowledge and agree to the <strong>Terms & Conditions</strong> previously accepted upon registration.
+          </p>
+          <div>
+            <h3 className="font-bold text-slate-800 mb-2">1. Fee Structure</h3>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>The Platform charges a baseline percentage fee per order, dependent on your current restaurant classification and regional settings.</li>
+              <li>A fixed fee may also be deducted per order depending on platform overhead arrangements.</li>
+              <li>These fees are deducted strictly against the net subtotal before taxes.</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800 mb-2">2. Subsidies & Coupons</h3>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Discount coupons provided by the Platform are subsidized. The prevailing model places exactly <strong>50%</strong> of the coupon value discount as an expense to the restaurant.</li>
+              <li>You may opt out of certain global coupon distributions by contacting your account manager.</li>
+            </ul>
+          </div>
+          <div>
+             <h3 className="font-bold text-slate-800 mb-2">3. Disbursement</h3>
+             <ul className="list-disc pl-5 space-y-1">
+               <li>Settlements are performed weekly, considering the net profit to the restaurant (Subtotal + Taxes Collected + Delivery charges, minus Platform Fees and 50% Coupon Subsidies).</li>
+             </ul>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

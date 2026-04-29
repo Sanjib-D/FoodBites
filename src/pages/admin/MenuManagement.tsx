@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Trash2, Edit, Plus, X } from 'lucide-react';
+import { InlineLoader } from '../../components/Loader';
 
 export function MenuManagement() {
   const [items, setItems] = useState<any[]>([]);
@@ -145,61 +146,73 @@ export function MenuManagement() {
           {!showForm && (
             <button 
               onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-600 transition-colors shrink-0"
+              className="flex items-center gap-2 bg-brand-500 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-brand-600 hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 shrink-0"
             >
-              <Plus className="w-4 h-4"/> Add Item
+              <Plus className="w-5 h-5"/> Add Item
             </button>
           )}
         </div>
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="mb-8 bg-slate-50 p-6 rounded-lg border border-slate-100 space-y-4 relative">
-          <button type="button" onClick={resetForm} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
-             <X className="w-5 h-5" />
-          </button>
-          <h3 className="font-bold text-slate-900 border-b pb-2 mb-4">{editId ? 'Edit Menu Item' : 'Add New Menu Item'}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Item Name</label>
-              <input required type="text" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="e.g. Garlic Bread" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-              <select required value={formData.category} onChange={e=>setFormData({...formData, category: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 bg-white focus:ring-2 focus:ring-brand-500 outline-none">
-                <option value="Starters">Starters</option>
-                <option value="Mains">Mains</option>
-                <option value="Sides">Sides</option>
-                <option value="Desserts">Desserts</option>
-                <option value="Drinks">Drinks</option>
-                <option value="Other">Other (Custom)</option>
-              </select>
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in slide-in-from-bottom-4 duration-300">
+            <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50 shrink-0">
+               <h3 className="font-bold text-slate-800 text-lg">{editId ? 'Edit Item' : 'New Menu Item'}</h3>
+               <button type="button" onClick={resetForm} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+                 <X className="w-5 h-5" />
+               </button>
             </div>
             
-            {formData.category === 'Other' && (
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Custom Category Name</label>
-                <input required type="text" value={formData.customCategory} onChange={e=>setFormData({...formData, customCategory: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="e.g. Signature Combos" />
-              </div>
-            )}
+            <div className="p-6 overflow-y-auto">
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Item Name</label>
+                    <input required type="text" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="e.g. Garlic Bread" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <select required value={formData.category} onChange={e=>setFormData({...formData, category: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 bg-white focus:ring-2 focus:ring-brand-500 outline-none">
+                      <option value="Starters">Starters</option>
+                      <option value="Mains">Mains</option>
+                      <option value="Sides">Sides</option>
+                      <option value="Desserts">Desserts</option>
+                      <option value="Drinks">Drinks</option>
+                      <option value="Other">Other (Custom)</option>
+                    </select>
+                  </div>
+                  
+                  {formData.category === 'Other' && (
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Custom Category Name</label>
+                      <input required type="text" value={formData.customCategory} onChange={e=>setFormData({...formData, customCategory: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="e.g. Signature Combos" />
+                    </div>
+                  )}
 
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-              <input required type="text" value={formData.description} onChange={e=>setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Price (₹)</label>
-              <input required type="number" step="0.01" min="0" value={formData.price} onChange={e=>setFormData({...formData, price: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" />
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                    <input required type="text" value={formData.description} onChange={e=>setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Price (₹)</label>
+                    <input required type="number" step="0.01" min="0" value={formData.price} onChange={e=>setFormData({...formData, price: e.target.value})} className="w-full px-3 py-2 rounded border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" />
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-100 flex justify-end gap-3">
+                  <button type="button" onClick={resetForm} className="px-5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors font-medium">Cancel</button>
+                  <button type="submit" disabled={saving} className="bg-slate-900 text-white px-6 py-2 rounded-lg font-medium hover:bg-slate-800 transition-colors">
+                    {saving ? 'Saving...' : (editId ? 'Update Item' : 'Save Item')}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
-          <button type="submit" disabled={saving} className="mt-4 bg-slate-900 text-white px-6 py-2 rounded-lg font-medium hover:bg-slate-800 transition-colors">
-            {saving ? 'Saving...' : (editId ? 'Update Item' : 'Save Item')}
-          </button>
-        </form>
+        </div>
       )}
 
       {loading ? (
-        <p className="text-slate-500 py-4">Loading menu...</p>
+        <InlineLoader text="Loading menu..." />
       ) : filteredItems.length === 0 ? (
         <p className="text-slate-500 py-4">No menu items found in this category.</p>
       ) : (

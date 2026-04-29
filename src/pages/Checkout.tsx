@@ -18,7 +18,7 @@ export function Checkout() {
 
   // Coupons & Pricing
   const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number; type: 'fixed' | 'percentage' } | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number; type: 'fixed' | 'percentage'; maxDiscount?: number } | null>(null);
   const [couponError, setCouponError] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'Online'>('COD');
   const [showDummyGateway, setShowDummyGateway] = useState(false);
@@ -80,6 +80,9 @@ export function Checkout() {
   if (appliedCoupon) {
     if (appliedCoupon.type === 'percentage') {
       discountAmount = subtotal * (appliedCoupon.discount / 100);
+      if (appliedCoupon.maxDiscount && discountAmount > appliedCoupon.maxDiscount) {
+        discountAmount = appliedCoupon.maxDiscount;
+      }
     } else {
       discountAmount = appliedCoupon.discount;
     }
@@ -103,7 +106,8 @@ export function Checkout() {
         setAppliedCoupon({ 
           code: data.coupon.code, 
           discount: data.coupon.discount, 
-          type: data.coupon.type 
+          type: data.coupon.type,
+          maxDiscount: data.coupon.maxDiscount
         });
       } else {
         setAppliedCoupon(null);
@@ -202,93 +206,28 @@ export function Checkout() {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-3">Delivery Address</label>
-                  {customer?.addresses?.length ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {customer.addresses.map((addr, i) => {
-                        const isObject = typeof addr === 'object' && addr !== null;
-                        const displayAddr = isObject ? addr.formatted : addr;
-                        const addrPhone = isObject ? addr.phone : '';
-                        
-                        return (
-                          <label 
-                            key={i} 
-                            className={`relative flex cursor-pointer rounded-xl border p-4 shadow-sm transition-all hover:bg-slate-50
-                              ${formData.address === displayAddr ? 'border-brand-500 ring-1 ring-brand-500 bg-brand-50/20' : 'border-slate-200 bg-white'}`}
-                          >
-                            <input 
-                              type="radio" 
-                              name="address_selection" 
-                              value={displayAddr} 
-                              checked={formData.address === displayAddr}
-                              onChange={() => {
-                                setFormData({
-                                  ...formData, 
-                                  address: displayAddr,
-                                  phone: addrPhone || formData.phone // Update phone if address has one
-                                });
-                              }}
-                              className="sr-only"
-                            />
-                            <div className="flex w-full items-start justify-between">
-                              <div className="flex items-start gap-3">
-                                <MapPin className={`w-5 h-5 shrink-0 mt-0.5 ${formData.address === displayAddr ? 'text-brand-500' : 'text-slate-400'}`} />
-                                <div className="text-sm">
-                                  <p className="font-medium text-slate-900 mb-1">Address {i + 1}</p>
-                                  <p className="text-slate-500 line-clamp-3">{displayAddr}</p>
-                                  {addrPhone && <p className="text-slate-400 mt-1 flex items-center gap-1 text-xs">📞 +{addrPhone}</p>}
-                                </div>
-                              </div>
-                              {formData.address === displayAddr && <Check className="w-5 h-5 text-brand-500 shrink-0" />}
-                            </div>
-                          </label>
-                        );
-                      })}
-                      
-                      <label 
-                        className={`relative flex cursor-pointer rounded-xl border border-dashed p-4 transition-all hover:bg-slate-50
-                          ${formData.address === 'new' ? 'border-brand-500 bg-brand-50/20' : 'border-slate-300 bg-white items-center justify-center'}`}
-                      >
-                        <input 
-                          type="radio" 
-                          name="address_selection" 
-                          value="new" 
-                          checked={formData.address === 'new'}
-                          onChange={() => setFormData({...formData, address: 'new'})}
-                          className="sr-only"
-                        />
-                        {formData.address === 'new' ? (
-                          <div className="w-full">
-                            <p className="font-medium text-slate-900 mb-2 text-sm flex items-center gap-2">
-                              <Plus className="w-4 h-4 text-brand-500"/> New Address
-                            </p>
-                            <textarea 
-                              required 
-                              value={formData.addressText}
-                              onChange={e => setFormData({...formData, addressText: e.target.value})}
-                              className="w-full p-3 rounded-lg border border-slate-200 text-sm focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all resize-none h-20" 
-                              placeholder="House/Flat No., Road, Landmark" 
-                            />
-                          </div>
-                        ) : (
-                          <div className="text-center text-slate-500 flex flex-col items-center gap-1.5">
-                            <Plus className="w-5 h-5 mx-auto" />
-                            <span className="text-sm font-medium">Add New Address</span>
-                          </div>
-                        )}
-                      </label>
+                  <h3 className="block text-sm font-semibold text-slate-700 mb-3">Delivery Address</h3>
+                  <div className="p-4 border border-brand-200 bg-brand-50/30 rounded-xl relative overflow-hidden">
+                    {formData.address && formData.address !== 'new' ? (
+                       <div className="flex items-start gap-3">
+                         <MapPin className="w-5 h-5 text-brand-500 shrink-0 mt-0.5" />
+                         <div>
+                            <p className="font-bold text-slate-900 mb-1">Delivering to Primary Address</p>
+                            <p className="text-sm text-slate-600 line-clamp-2 leading-snug">{formData.address}</p>
+                            {formData.phone && <p className="text-xs text-slate-500 mt-1.5 font-medium flex items-center gap-1">📞 +{formData.phone}</p>}
+                         </div>
+                       </div>
+                    ) : (
+                       <div className="flex items-start gap-3">
+                         <div className="text-red-600 font-bold text-sm">No delivery address selected. Please add one from your profile at the top.</div>
+                       </div>
+                    )}
+                    <div className="mt-4 pt-3 border-t border-brand-100 flex items-center justify-between">
+                       <span className="text-xs text-slate-400 font-medium tracking-wide">SHIPPING INFO</span>
+                       <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); document.dispatchEvent(new Event('open-address-modal')); }} className="text-xs font-semibold text-brand-600 hover:text-brand-700">Change address</button>
                     </div>
-                  ) : (
-                    <div className="mt-2">
-                      <textarea 
-                        required 
-                        value={formData.addressText}
-                        onChange={e => setFormData({...formData, addressText: e.target.value, address: 'new'})}
-                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all resize-none h-24" 
-                        placeholder="House/Flat No., Road, Landmark" 
-                      />
-                    </div>
-                  )}
+                  </div>
+                  <input type="hidden" name="address" value={formData.address} />
                 </div>
 
                 <div>
@@ -359,36 +298,42 @@ export function Checkout() {
                 ))}
               </div>
 
-              <div className="border-t border-slate-100 pt-4">
-                <div className="flex items-center gap-2 mb-4">
+              <div className="border-t border-slate-100 pt-6 pb-2">
+                <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+                  <Tag className="w-5 h-5 text-brand-500" /> Offers & Benefits
+                </h3>
+                <div className={`p-1 flex items-center gap-2 rounded-xl transition-all border-2 ${appliedCoupon ? 'border-green-500 bg-green-50/50 shadow-sm' : 'border-slate-200 bg-white focus-within:border-brand-500 focus-within:shadow-sm'}`}>
                   <div className="flex-1 relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Tag className="h-4 w-4 text-slate-400" />
-                    </div>
                     <input 
                       type="text" 
                       disabled={!!appliedCoupon}
                       value={couponCode}
                       onChange={(e) => setCouponCode(e.target.value)}
                       placeholder="Enter Coupon Code" 
-                      className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-brand-500 outline-none uppercase disabled:opacity-60" 
+                      className="w-full px-4 py-2 bg-transparent text-sm outline-none uppercase font-bold placeholder:font-normal placeholder:normal-case placeholder:text-slate-400 disabled:opacity-80 disabled:text-green-700 text-slate-800" 
                     />
                   </div>
                   {appliedCoupon ? (
-                    <button onClick={handleRemoveCoupon} className="px-4 py-2 bg-red-50 text-red-600 text-sm font-medium rounded-lg hover:bg-red-100 transition-colors">
+                    <button onClick={handleRemoveCoupon} className="px-5 py-2.5 bg-green-100 text-green-700 text-sm font-bold rounded-lg hover:bg-green-200 transition-colors">
                       Remove
                     </button>
                   ) : (
-                    <button onClick={handleApplyCoupon} className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors">
+                    <button onClick={handleApplyCoupon} className="px-6 py-2.5 bg-brand-500 text-white text-sm font-bold rounded-lg hover:bg-brand-600 transition-colors shadow-sm">
                       Apply
                     </button>
                   )}
                 </div>
-                {couponError && <p className="text-red-500 text-xs font-medium mb-3 pl-1">{couponError}</p>}
-                {appliedCoupon && <p className="text-green-600 text-xs font-medium mb-3 pl-1">Coupon '{appliedCoupon.code}' applied successfully!</p>}
+                {couponError && <p className="text-red-500 text-xs font-semibold mt-2 pl-2 animate-in slide-in-from-top-1">{couponError}</p>}
+                {appliedCoupon && (
+                  <div className="mt-2 pl-2 flex items-center gap-1.5 text-green-600 text-xs font-bold animate-in slide-in-from-top-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    You're saving ₹{discountAmount.toFixed(2)} with this code
+                  </div>
+                )}
               </div>
 
-              <div className="border-t border-slate-100 pt-4 space-y-3">
+              <div className="border border-slate-200 rounded-xl bg-slate-50 p-4 space-y-3 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjQiPgo8Y2lyY2xlIGN4PSI0IiBjeT0iMiIgcj0iMSIgZmlsbD0iI2NiZDVlMSIvPgo8L3N2Zz4=')] repeat-x"></div>
                 <div className="flex justify-between text-sm text-slate-600">
                   <span>Item Total</span>
                   <span className="font-medium text-slate-900">₹{subtotal.toFixed(2)}</span>
@@ -400,22 +345,25 @@ export function Checkout() {
                   </div>
                 )}
                 <div className="flex justify-between text-sm text-slate-600">
-                  <span>Delivery Fee</span>
+                  <span>Delivery Partner Fee</span>
                   <span className="font-medium text-slate-900">₹{deliveryCharge.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm text-slate-600">
-                  <span>Platform Fee</span>
+                  <span className="flex items-center gap-1 group relative cursor-help">
+                    Platform Fee
+                    <div className="hidden group-hover:block absolute bottom-full mb-2 left-0 w-48 bg-slate-800 text-white text-xs p-2 rounded shadow-lg z-10">Helps us maintain the platform.</div>
+                  </span>
                   <span className="font-medium text-slate-900">₹{serviceCharge.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm text-slate-600">
-                  <span>Taxes ({taxRate}%)</span>
+                  <span>Taxes & Charges ({taxRate}%)</span>
                   <span className="font-medium text-slate-900">₹{taxAmount.toFixed(2)}</span>
                 </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-4 mt-4 flex justify-between items-center">
-                <span className="font-bold text-lg text-slate-900">To Pay</span>
-                <span className="font-sans font-black text-2xl text-brand-600">₹{finalTotal.toFixed(2)}</span>
+                
+                <div className="border-t border-dashed border-slate-300 pt-3 mt-3 flex justify-between items-center">
+                  <span className="font-bold text-lg text-slate-900">To Pay</span>
+                  <span className="font-sans font-black text-2xl text-brand-600 tracking-tight">₹{finalTotal.toFixed(2)}</span>
+                </div>
               </div>
 
               <button 

@@ -18,7 +18,6 @@ import { HelpCenter } from './pages/HelpCenter';
 import { Terms } from './pages/Terms';
 import { Privacy } from './pages/Privacy';
 import { CustomerProfile } from './pages/CustomerProfile';
-import { Addresses } from './pages/Addresses';
 import { OrderHistory } from './pages/OrderHistory';
 
 export function CustomerLayout() {
@@ -44,7 +43,6 @@ export function CustomerLayout() {
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/order/:id" element={<OrderTracker />} />
             <Route path="/profile" element={<CustomerProfile />} />
-            <Route path="/addresses" element={<Addresses />} />
             <Route path="/orders" element={<OrderHistory />} />
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin/register" element={<AdminRegister />} />

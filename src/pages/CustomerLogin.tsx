@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
 export function CustomerLogin() {
@@ -51,8 +52,14 @@ export function CustomerLogin() {
   };
 
   return (
-    <div className="flex-1 bg-slate-50 flex justify-center items-center p-4">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="flex-1 bg-slate-50 flex justify-center items-center p-4"
+    >
+      <div className="w-full max-w-md bg-white border border-slate-200 p-8 shadow-sm rounded-xl">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-slate-900">{isLogin ? 'Welcome Back' : 'Create Account'}</h1>
           <p className="text-slate-500 text-sm mt-1">
@@ -113,6 +120,6 @@ export function CustomerLogin() {
           </Link>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

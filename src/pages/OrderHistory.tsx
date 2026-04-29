@@ -13,7 +13,8 @@ export function OrderHistory() {
       fetch(`/api/customers/${customer._id}/orders`)
         .then(res => res.json())
         .then(data => {
-          setOrders(data);
+          const sorted = Array.isArray(data) ? [...data].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) : [];
+          setOrders(sorted);
           setLoading(false);
         })
         .catch(() => setLoading(false));

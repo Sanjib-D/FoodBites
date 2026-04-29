@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { CheckCircle2, Clock, ChefHat, Bike, Check, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { LoadingScreen } from '../components/Loader';
 
 export function OrderTracker() {
   const { id } = useParams();
@@ -91,7 +92,7 @@ export function OrderTracker() {
     }
   };
 
-  if (loading) return <div className="p-12 text-center text-gray-500">Loading order details...</div>;
+  if (loading) return <LoadingScreen />;
   if (!order || error) return <div className="p-12 text-center text-red-500">Order not found</div>;
 
   const steps = [
@@ -144,7 +145,7 @@ export function OrderTracker() {
                   <h3 className={`font-semibold text-lg ${isCompleted ? 'text-slate-900' : 'text-slate-400'}`}>
                     {step.label}
                   </h3>
-                  {isCompleted && index === currentStepIndex && (
+                  {isCompleted && index === currentStepIndex && status !== 'Delivered' && (
                     <p className="text-brand-500 text-sm font-medium mt-1 animate-pulse">In progress...</p>
                   )}
                 </div>

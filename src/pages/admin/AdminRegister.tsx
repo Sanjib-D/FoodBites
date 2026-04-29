@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AlertCircle, Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export function AdminRegister() {
   const [formData, setFormData] = useState({
@@ -8,6 +9,7 @@ export function AdminRegister() {
     email: '',
     password: '',
     cuisine: '',
+    address: '',
     deliveryTime: '30-45 min',
     image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&q=80&w=800'
   });
@@ -61,7 +63,13 @@ export function AdminRegister() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4">
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4 }}
+      className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4"
+    >
       <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-slate-200 p-8">
         
         <div className="flex flex-col flex-1 items-center mb-8">
@@ -146,6 +154,31 @@ export function AdminRegister() {
             />
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Restaurant Address</label>
+            <input
+              name="address"
+              type="text"
+              required
+              value={formData.address}
+              onChange={handleChange}
+              className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all"
+              placeholder="123 Food Street, City"
+            />
+          </div>
+
+          <div className="flex items-start gap-3 mt-4">
+            <input 
+               type="checkbox" 
+               required 
+               id="terms" 
+               className="mt-1 w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500" 
+            />
+            <label htmlFor="terms" className="text-sm text-slate-600">
+               I agree to the <a href="#" className="text-brand-600 hover:underline">Terms & Conditions</a>. I understand that the platform charges a percentage fee per order depending on my agreement, and I will bear 50% of any coupon discounts subsidized by the platform.
+            </label>
+          </div>
+
           <button
             type="submit"
             disabled={isLoading}
@@ -171,6 +204,6 @@ export function AdminRegister() {
           </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export function SuperAdminLogin() {
   const [email, setEmail] = useState('');
@@ -37,7 +38,13 @@ export function SuperAdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4 }}
+      className="min-h-screen bg-slate-900 flex items-center justify-center p-4"
+    >
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden">
         <div className="bg-slate-800 p-8 text-center text-white relative flex flex-col items-center">
           <button 
@@ -109,6 +116,6 @@ export function SuperAdminLogin() {
           </button>
         </form>
       </div>
-    </div>
+    </motion.div>
   );
 }
