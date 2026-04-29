@@ -42,11 +42,19 @@ export function Checkout() {
 
   useEffect(() => {
     if (customer) {
+      const firstAddr = customer.addresses?.length ? customer.addresses[0] : null;
+      const initialAddress = firstAddr ? (typeof firstAddr === 'object' ? firstAddr.formatted : firstAddr) : 'new';
       setFormData(prev => ({
         ...prev,
         name: customer.name || '',
-        address: customer.addresses?.length ? customer.addresses[0] : (customer.address || ''),
+        address: initialAddress,
+        addressText: customer.address || '',
         phone: customer.phone || ''
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        address: 'new'
       }));
     }
   }, [customer]);
@@ -109,7 +117,12 @@ export function Checkout() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.address && formData.address !== 'new') return alert("Please select or enter a delivery address");
+    if (formData.address === 'new' && !formData.addressText.trim()) {
+      return alert("Please enter a delivery address");
+    }
+    if (!formData.address && formData.address !== 'new') {
+      return alert("Please select or enter a delivery address");
+    }
     if (paymentMethod === 'Online') {
       setShowDummyGateway(true);
     } else {
@@ -146,10 +159,12 @@ export function Checkout() {
       if (data.success) {
         clearCart();
         navigate(`/order/${data.order._id}`);
+      } else {
+        alert(data.error || 'Failed to place order (Server Error)');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to place order');
+      alert('Failed to place order: ' + err.message);
     } finally {
       setLoading(false);
       setShowDummyGateway(false);
