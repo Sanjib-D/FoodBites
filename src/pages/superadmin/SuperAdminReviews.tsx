@@ -67,8 +67,9 @@ export function SuperAdminReviews() {
     return () => { isMounted = false; };
   }, [selectedRestId]);
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this review globally?")) return;
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/superadmin/reviews/${id}`, {
@@ -79,9 +80,11 @@ export function SuperAdminReviews() {
       if (data.success) {
         setReviews(reviews.filter(r => r._id !== id));
         setGlobalFlaggedReviews(prev => prev.filter(r => r._id !== id));
+        setConfirmDeleteId(null);
       }
     } catch (err) {
-      alert("Failed to delete review");
+      console.error(err);
+      setConfirmDeleteId(null);
     }
   };
 
@@ -149,61 +152,113 @@ export function SuperAdminReviews() {
           </button>
         </div>
 
+      <AnimatePresence>
         {showGlobalFlagged && (
-          <div className="bg-red-50/50 p-6 rounded-2xl border border-red-200 shadow-sm animate-in fade-in slide-in-from-top-4 space-y-4">
-            <h3 className="text-lg font-bold text-red-600 flex items-center gap-2">
-              <Flag className="w-5 h-5" /> Global Flagged Reviews
-            </h3>
+          <motion.div 
+            key="global-flagged-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50"
+          >
+            <motion.div 
+              key="global-flagged-content"
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white shrink-0">
+                <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                  <Flag className="w-6 h-6 text-red-500" /> Global Flagged Reviews
+                </h3>
+                 <button type="button" onClick={() => setShowGlobalFlagged(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
+                   <X className="w-5 h-5" />
+                 </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto bg-slate-50/50">
             {globalFlaggedReviews.length === 0 ? (
-              <p className="text-slate-500">No flagged reviews across any restaurants.</p>
+              <div className="p-8 text-center bg-white rounded-xl border border-slate-200 shadow-sm">
+                <p className="text-slate-500">No flagged reviews found.</p>
+              </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {globalFlaggedReviews.map(review => (
-                  <div key={review._id} className="p-4 bg-white rounded-xl border border-red-200 shadow-sm relative overflow-hidden flex flex-col">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-                    <div className="flex justify-between items-start mb-3 pl-2">
-                      <div>
-                        <h3 className="font-bold text-slate-800 text-sm">{review.customerName}</h3>
-                        <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
-                          <Store className="w-3.5 h-3.5" />
-                          <span className="truncate max-w-[120px]">{restaurants.find(r => r._id === review.restaurantId)?.name || 'Restaurant'}</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <AnimatePresence>
+                  {globalFlaggedReviews.map(review => (
+                    <motion.div 
+                      layout
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      key={review._id} 
+                      className="p-5 bg-white rounded-xl border border-red-200 shadow-sm relative overflow-hidden flex flex-col hover:shadow-md transition-all group"
+                    >
+                      <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                      <div className="flex justify-between items-start mb-3 pl-2">
+                        <div>
+                          <h3 className="font-bold text-slate-800 text-sm">{review.customerName}</h3>
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
+                            <Store className="w-3.5 h-3.5" />
+                            <span className="truncate max-w-[120px]">{restaurants.find(r => r._id === review.restaurantId)?.name || 'Restaurant'}</span>
+                          </div>
+                        </div>
+                        <div className="flex bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100">
+                          {[...Array(5)].map((_, i) => (
+                            <Star key={i} className={`w-3.5 h-3.5 ${i < (review.rating || 0) ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} />
+                          ))}
                         </div>
                       </div>
-                      <div className="flex bg-slate-50 px-2 py-1 rounded">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} className={`w-3.5 h-3.5 ${i < (review.rating || 0) ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} />
-                        ))}
+                      <p className="text-slate-700 text-sm leading-relaxed bg-red-50/50 p-3 rounded-lg border border-red-100/50 ml-2 mb-5 flex-1 line-clamp-4">"{review.comment}"</p>
+                      
+                      <div className="flex justify-between items-center pt-4 border-t border-red-100 mt-auto ml-2">
+                        {review.orderId ? (
+                          <button 
+                            onClick={() => showOrderDetails(review.orderId)}
+                            disabled={loadingOrderId === review.orderId}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-brand-600 hover:bg-brand-100 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                          >
+                            {loadingOrderId === review.orderId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                            {loadingOrderId === review.orderId ? 'Loading...' : 'Details'}
+                          </button>
+                        ) : (
+                          <div></div>
+                        )}
+                        {confirmDeleteId === review._id ? (
+                          <div className="flex items-center gap-1">
+                            <button 
+                              onClick={() => handleDelete(review._id)}
+                              className="px-2 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded-lg text-xs font-medium transition-all shadow-sm"
+                            >
+                              Confirm
+                            </button>
+                            <button 
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="px-2 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-medium transition-all"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => setConfirmDeleteId(review._id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-500 hover:text-white rounded-lg text-xs font-medium transition-all shadow-sm"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete Review
+                          </button>
+                        )}
                       </div>
-                    </div>
-                    <p className="text-slate-800 text-sm font-medium bg-white p-3 rounded border border-red-100 ml-2 mb-4 flex-1 line-clamp-4">"{review.comment}"</p>
-                    
-                    <div className="flex justify-between pt-3 border-t border-red-100 mt-auto ml-2">
-                      {review.orderId ? (
-                        <button 
-                          onClick={() => showOrderDetails(review.orderId)}
-                          disabled={loadingOrderId === review.orderId}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-brand-600 hover:bg-brand-100 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                        >
-                          {loadingOrderId === review.orderId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
-                          {loadingOrderId === review.orderId ? 'Loading...' : 'Details'}
-                        </button>
-                      ) : (
-                        <div></div>
-                      )}
-                      <button 
-                        onClick={() => handleDelete(review._id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 rounded-lg text-xs font-medium transition-all"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Delete Global
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             )}
-          </div>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
+      </AnimatePresence>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {restaurants.map(rest => (
@@ -311,13 +366,30 @@ export function SuperAdminReviews() {
                   ) : (
                     <div></div>
                   )}
-                  <button 
-                    onClick={() => handleDelete(review._id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700 rounded-lg text-xs font-medium transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Delete
-                  </button>
+                  {confirmDeleteId === review._id ? (
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => handleDelete(review._id)}
+                        className="px-2 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded-lg text-xs font-medium transition-all shadow-sm"
+                      >
+                        Confirm
+                      </button>
+                      <button 
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="px-2 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-medium transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => setConfirmDeleteId(review._id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-600 hover:bg-red-500 hover:text-white border border-red-200 rounded-lg text-xs font-medium transition-colors shadow-sm"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete Review
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -364,13 +436,30 @@ export function SuperAdminReviews() {
                   ) : (
                     <div></div>
                   )}
-                  <button 
-                    onClick={() => handleDelete(review._id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg text-xs font-medium transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Delete
-                  </button>
+                  {confirmDeleteId === review._id ? (
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => handleDelete(review._id)}
+                        className="px-2 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded-lg text-xs font-medium transition-all shadow-sm"
+                      >
+                        Confirm
+                      </button>
+                      <button 
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="px-2 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-medium transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => setConfirmDeleteId(review._id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg text-xs font-medium transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -391,12 +480,14 @@ export function SuperAdminReviews() {
       <AnimatePresence>
         {selectedOrder && (
           <motion.div 
+            key="order-modal-overlay"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
+            className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50"
           >
             <motion.div 
+              key="order-modal-content"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}

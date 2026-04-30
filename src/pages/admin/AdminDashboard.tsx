@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, ClipboardList, UtensilsCrossed, BarChart3, Users, Bell, LogOut, X } from 'lucide-react';
 import { Link, useNavigate, Routes, Route, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 
 import { DashboardOverview } from './DashboardOverview';
 import { LiveOrders } from './LiveOrders';
+import { AdminOrderHistory } from './AdminOrderHistory';
 import { MenuManagement } from './MenuManagement';
 import { Analytics } from './Analytics';
 import { Customers } from './Customers';
 import { RestaurantProfile } from './RestaurantProfile';
 import { RestaurantReviews } from './RestaurantReviews';
-import { Store, MessageSquare } from 'lucide-react';
+import { Store, MessageSquare, History } from 'lucide-react';
 
 export function AdminDashboard() {
   const navigate = useNavigate();
@@ -61,6 +63,18 @@ export function AdminDashboard() {
   };
 
   const [notifications, setNotifications] = useState<any[]>([]);
+
+  const AnimatedRoute = ({ children }: { children: React.ReactNode }) => (
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      className="h-full"
+    >
+      {children}
+    </motion.div>
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -115,6 +129,7 @@ export function AdminDashboard() {
         <nav className="flex-1 px-4 py-4 space-y-1">
           <NavItem to="/admin/dashboard" icon={LayoutDashboard} label="Dashboard" />
           <NavItem to="/admin/dashboard/orders" icon={ClipboardList} label="Live Orders" />
+          <NavItem to="/admin/dashboard/history" icon={History} label="Order History" />
           <NavItem to="/admin/dashboard/menu" icon={UtensilsCrossed} label="Menu Management" />
           <NavItem to="/admin/dashboard/profile" icon={Store} label="Restaurant Profile" />
           <NavItem to="/admin/dashboard/analytics" icon={BarChart3} label="Analytics" />
@@ -183,15 +198,30 @@ export function AdminDashboard() {
 
         {/* Content View */}
         <div className="p-8 flex-1 overflow-y-auto bg-slate-50 relative z-10">
-          <Routes>
-            <Route index element={<DashboardOverview />} />
-            <Route path="orders" element={<LiveOrders />} />
-            <Route path="menu" element={<MenuManagement />} />
-            <Route path="profile" element={<RestaurantProfile />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="customers" element={<Customers />} />
-            <Route path="reviews" element={<RestaurantReviews />} />
-          </Routes>
+          <div className={currentPath === '/admin/dashboard' || currentPath === '/admin/dashboard/' ? 'block animate-in fade-in slide-in-from-bottom-4 duration-300' : 'hidden'}>
+            <DashboardOverview />
+          </div>
+          <div className={currentPath === '/admin/dashboard/orders' ? 'block animate-in fade-in slide-in-from-bottom-4 duration-300' : 'hidden'}>
+            <LiveOrders />
+          </div>
+          <div className={currentPath === '/admin/dashboard/history' ? 'block animate-in fade-in slide-in-from-bottom-4 duration-300' : 'hidden'}>
+            <AdminOrderHistory />
+          </div>
+          <div className={currentPath === '/admin/dashboard/menu' ? 'block animate-in fade-in slide-in-from-bottom-4 duration-300' : 'hidden'}>
+            <MenuManagement />
+          </div>
+          <div className={currentPath === '/admin/dashboard/profile' ? 'block animate-in fade-in slide-in-from-bottom-4 duration-300' : 'hidden'}>
+            <RestaurantProfile />
+          </div>
+          <div className={currentPath === '/admin/dashboard/analytics' ? 'block animate-in fade-in slide-in-from-bottom-4 duration-300' : 'hidden'}>
+            <Analytics />
+          </div>
+          <div className={currentPath === '/admin/dashboard/customers' ? 'block animate-in fade-in slide-in-from-bottom-4 duration-300' : 'hidden'}>
+            <Customers />
+          </div>
+          <div className={currentPath === '/admin/dashboard/reviews' ? 'block animate-in fade-in slide-in-from-bottom-4 duration-300' : 'hidden'}>
+            <RestaurantReviews />
+          </div>
         </div>
       </main>
     </div>

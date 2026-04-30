@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Store, Tag, Settings, BarChart, FileText, Trash2, Briefcase, Filter, Plus, MessageSquare, Edit2, LogOut, Receipt } from 'lucide-react';
+import { Shield, Store, Tag, Settings, BarChart, FileText, Trash2, Briefcase, Filter, Plus, MessageSquare, Edit2, LogOut, Receipt, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { SuperAdminReviews } from './SuperAdminReviews';
 import { SuperAdminOrders } from './SuperAdminOrders';
 
@@ -26,6 +27,7 @@ export function SuperAdminDashboard() {
   };
 
   const [restaurants, setRestaurants] = useState<any[]>([]);
+  const [selectedRestaurant, setSelectedRestaurant] = useState<any | null>(null);
   const [coupons, setCoupons] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({ deliveryCharge: 0, platformFee: 0, taxRate: 5, restaurantFeePercent: 5, restaurantFeeFixed: 10 });
   const [stats, setStats] = useState<any>({ 
@@ -34,17 +36,17 @@ export function SuperAdminDashboard() {
     totalRestaurantPlatformFee: 0, totalDiscount: 0, totalTax: 0, restaurantStats: []
   });
   const [period, setPeriod] = useState('lifetime');
-  const [month, setMonth] = useState('');
+  const [month, setMonth] = useState(() => {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    return `${now.getFullYear()}-${mm}`;
+  });
 
   const [editingCouponId, setEditingCouponId] = useState<string | null>(null);
   const [couponForm, setCouponForm] = useState({ code: '', discount: '', type: 'fixed', maxDiscount: '' });
 
-  useEffect(() => {
-    // Set default month to current local month
-    const now = new Date();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    setMonth(`${now.getFullYear()}-${mm}`);
-  }, []);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [restSortBy, setRestSortBy] = useState('totalSales');
   const [applications, setApplications] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -62,6 +64,7 @@ export function SuperAdminDashboard() {
   }, [period, month]);
 
   const fetchData = async () => {
+    setIsLoading(true);
     try {
       let statUrl = `/api/admin/stats?period=${period}`;
       if (period === 'monthly' && month) {
@@ -75,14 +78,24 @@ export function SuperAdminDashboard() {
         fetchWithAuth('/api/superadmin/applications'),
         fetchWithAuth('/api/jobs')
       ]);
-      setRestaurants(await restRes.json());
-      setCoupons(await coupRes.json());
-      setSettings(await settRes.json());
-      setStats(await statRes.json());
-      setApplications(await appRes.json());
-      setJobs(await jobRes.json());
+      const [restData, coupData, settData, statData, appData, jobData] = await Promise.all([
+        restRes.json(),
+        coupRes.json(),
+        settRes.json(),
+        statRes.json(),
+        appRes.json(),
+        jobRes.json()
+      ]);
+      setRestaurants(restData);
+      setCoupons(coupData);
+      setSettings(settData);
+      setStats(statData);
+      setApplications(appData);
+      setJobs(jobData);
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -117,7 +130,8 @@ export function SuperAdminDashboard() {
 
   const deleteCoupon = async (id: string) => {
     try {
-      await fetchWithAuth(`/api/superadmin/coupons/${id}`, { method: 'DELETE' });
+      const res = await fetchWithAuth(`/api/superadmin/coupons/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete coupon');
       setCoupons(prev => prev.filter(c => c._id !== id));
     } catch (err) {
       alert('Failed to delete coupon');
@@ -127,7 +141,8 @@ export function SuperAdminDashboard() {
   const deleteApplication = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this application?')) return;
     try {
-      await fetchWithAuth(`/api/superadmin/applications/${id}`, { method: 'DELETE' });
+      const res = await fetchWithAuth(`/api/superadmin/applications/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete application');
       fetchData();
     } catch (err) {
       alert('Failed to delete application');
@@ -137,7 +152,8 @@ export function SuperAdminDashboard() {
   const deleteJob = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this job posting?')) return;
     try {
-      await fetchWithAuth(`/api/superadmin/jobs/${id}`, { method: 'DELETE' });
+      const res = await fetchWithAuth(`/api/superadmin/jobs/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete job');
       fetchData();
     } catch (err) {
       alert('Failed to delete job');
@@ -216,8 +232,21 @@ export function SuperAdminDashboard() {
     });
   };
 
+  const AnimatedTab = ({ children, tabId }: { children: React.ReactNode, tabId: string }) => (
+    <motion.div
+      key={tabId}
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      className="w-full h-full"
+    >
+      {children}
+    </motion.div>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="h-screen bg-slate-50 flex overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col pt-6 shrink-0">
         <div className="px-6 mb-8 flex items-center gap-3">
@@ -294,9 +323,9 @@ export function SuperAdminDashboard() {
            <button onClick={() => {
               localStorage.removeItem('token');
               navigate('/superadmin/login');
-           }} className="text-slate-400 hover:text-white flex items-center justify-start gap-3 px-4 w-full py-3 hover:bg-slate-800 rounded-lg group transition-colors text-sm font-medium">
-              <LogOut className="w-5 h-5 text-slate-400 group-hover:text-red-400 transition-colors" />
+           }} className="text-slate-400 hover:text-white flex items-center justify-center gap-3 px-4 w-full py-3 hover:bg-slate-800 rounded-lg group transition-colors text-sm font-medium">
               <span>Log Out</span>
+              <LogOut className="w-5 h-5 text-slate-400 group-hover:text-red-400 transition-colors" />
            </button>
         </div>
       </aside>
@@ -305,7 +334,15 @@ export function SuperAdminDashboard() {
       <main className="flex-1 p-8 overflow-y-auto">
         <h2 className="text-2xl font-bold text-slate-900 mb-8 capitalize">{activeTab.replace('-', ' ')}</h2>
 
-        {activeTab === 'applications' && (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center p-12 h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500 mb-4"></div>
+            <p className="text-slate-500 text-sm">Loading admin data...</p>
+          </div>
+        ) : (
+          <AnimatePresence mode="wait">
+          {activeTab === 'applications' && (
+          <AnimatedTab tabId="applications">
           <div className="space-y-6">
             <div className="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
               <Filter className="w-5 h-5 text-slate-400" />
@@ -363,9 +400,11 @@ export function SuperAdminDashboard() {
               )}
             </div>
           </div>
+          </AnimatedTab>
         )}
 
         {activeTab === 'jobs' && (
+          <AnimatedTab tabId="jobs">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white rounded-xl shadow-sm border border-slate-200">
                <div className="p-6 border-b border-slate-100 bg-slate-50">
@@ -419,9 +458,11 @@ export function SuperAdminDashboard() {
               </form>
             </div>
           </div>
+          </AnimatedTab>
         )}
 
         {activeTab === 'dashboard' && (
+          <AnimatedTab tabId="dashboard">
           <div className="space-y-8">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h3 className="text-xl font-bold text-slate-800">Financial Metrics</h3>
@@ -443,7 +484,7 @@ export function SuperAdminDashboard() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <p className="text-sm text-slate-500 mb-2">Total System Volume</p>
+                <p className="text-sm text-slate-500 mb-2">Total Revenue</p>
                 <p className="text-3xl font-black text-slate-900">₹{(stats.totalRevenue || 0).toFixed(2)}</p>
               </div>
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
@@ -511,9 +552,11 @@ export function SuperAdminDashboard() {
                </table>
             </div>
           </div>
+          </AnimatedTab>
         )}
 
         {activeTab === 'restaurants' && (
+          <AnimatedTab tabId="restaurants">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <table className="w-full text-left">
               <thead className="bg-slate-50 border-b border-slate-200">
@@ -526,7 +569,12 @@ export function SuperAdminDashboard() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {restaurants.map(rest => (
-                  <tr key={rest._id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={rest._id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={(e) => {
+                    // Prevent row click if the click happened on a button
+                    if ((e.target as HTMLElement).tagName.toLowerCase() !== 'button') {
+                      setSelectedRestaurant(rest);
+                    }
+                  }}>
                     <td className="px-6 py-4 font-medium text-slate-900">{rest.name}</td>
                     <td className="px-6 py-4 text-slate-500">{rest.cuisine}</td>
                     <td className="px-6 py-4">
@@ -537,23 +585,28 @@ export function SuperAdminDashboard() {
                         {rest.status || 'pending'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      {rest.status !== 'approved' && (
-                        <button onClick={() => updateRestaurantStatus(rest._id, 'approved')} className="text-brand-600 hover:text-brand-800 font-medium text-sm mr-4">Approve</button>
-                      )}
-                      {rest.status !== 'rejected' && (
-                        <button onClick={() => updateRestaurantStatus(rest._id, 'rejected')} className="text-red-500 hover:text-red-700 font-medium text-sm">Reject</button>
-                      )}
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-3">
+                        {rest.status !== 'approved' && (
+                          <button onClick={(e) => { e.stopPropagation(); updateRestaurantStatus(rest._id, 'approved'); }} className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-md font-medium text-xs z-10 relative transition-colors shadow-sm border border-green-200">Approve</button>
+                        )}
+                        {rest.status !== 'rejected' && (
+                          <button onClick={(e) => { e.stopPropagation(); updateRestaurantStatus(rest._id, 'rejected'); }} className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-md font-medium text-xs z-10 relative transition-colors shadow-sm border border-red-200">Reject</button>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedRestaurant(rest); }} className="px-3 py-1.5 bg-slate-50 text-slate-700 hover:bg-slate-100 rounded-md font-medium text-xs z-10 relative transition-colors shadow-sm border border-slate-200">View</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </AnimatedTab>
         )}
 
         {activeTab === 'settings' && (
-          <div className="max-w-4xl space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          <AnimatedTab tabId="settings">
+          <div className="max-w-4xl space-y-8">
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">Platform Financial Settings</h2>
             
             <form onSubmit={updateSettings} className="space-y-6">
@@ -667,9 +720,11 @@ export function SuperAdminDashboard() {
               </div>
             </form>
           </div>
+          </AnimatedTab>
         )}
 
         {activeTab === 'coupons' && (
+          <AnimatedTab tabId="coupons">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white rounded-xl shadow-sm border border-slate-200">
                <div className="p-6 border-b border-slate-100">
@@ -746,15 +801,94 @@ export function SuperAdminDashboard() {
                </form>
             </div>
           </div>
+          </AnimatedTab>
         )}
 
         {activeTab === 'reviews' && (
-          <SuperAdminReviews key={tabKey} />
+          <AnimatedTab tabId="reviews">
+            <SuperAdminReviews key={tabKey} />
+          </AnimatedTab>
         )}
         {activeTab === 'orders' && (
-          <SuperAdminOrders key={tabKey} />
+          <AnimatedTab tabId="orders">
+            <SuperAdminOrders key={tabKey} />
+          </AnimatedTab>
         )}
+        </AnimatePresence>
+        )}
+
       </main>
+      <AnimatePresence>
+        {selectedRestaurant && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50 shrink-0">
+                <h3 className="font-bold text-slate-800 text-lg">Restaurant Details</h3>
+                <button 
+                  onClick={() => setSelectedRestaurant(null)}
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto space-y-6">
+                <div className="flex items-start gap-6">
+                  {selectedRestaurant.image ? (
+                    <img src={selectedRestaurant.image} alt={selectedRestaurant.name} className="w-32 h-32 rounded-xl object-cover shrink-0 border border-slate-200" />
+                  ) : (
+                     <div className="w-32 h-32 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-200 shrink-0">
+                       <Store className="w-10 h-10 text-slate-300" />
+                     </div>
+                  )}
+                  
+                  <div className="flex-1 space-y-2">
+                    <h4 className="text-2xl font-black text-slate-900">{selectedRestaurant.name}</h4>
+                    <div className="flex gap-2 text-sm text-slate-600 font-medium">
+                      <span className="bg-slate-100 px-2 py-0.5 rounded-md text-slate-700">{selectedRestaurant.cuisine}</span>
+                    </div>
+                    <p className="text-slate-500 text-sm">{selectedRestaurant.address || 'No address provided'}</p>
+                    {selectedRestaurant.mapsUrl && (
+                      <a href={selectedRestaurant.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline text-sm font-medium inline-flex items-center gap-1">
+                        View on Google Maps
+                      </a>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Status</p>
+                     <p className="font-medium text-slate-900 capitalize">{selectedRestaurant.status || 'Pending'}</p>
+                   </div>
+                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Created At</p>
+                     <p className="font-medium text-slate-900">{selectedRestaurant.createdAt ? new Date(selectedRestaurant.createdAt).toLocaleDateString() : 'N/A'}</p>
+                   </div>
+                </div>
+              </div>
+              <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
+                <button onClick={() => setSelectedRestaurant(null)} className="px-5 py-2 rounded-lg font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">Close</button>
+                {selectedRestaurant.status !== 'approved' && (
+                  <button onClick={() => { updateRestaurantStatus(selectedRestaurant._id, 'approved'); setSelectedRestaurant(prev => ({...prev, status: 'approved'})); }} className="px-5 py-2 rounded-lg font-bold text-white bg-green-500 hover:bg-green-600 transition-colors shadow-sm">Approve</button>
+                )}
+                {selectedRestaurant.status !== 'rejected' && (
+                  <button onClick={() => { updateRestaurantStatus(selectedRestaurant._id, 'rejected'); setSelectedRestaurant(prev => ({...prev, status: 'rejected'})); }} className="px-5 py-2 rounded-lg font-bold text-white bg-red-500 hover:bg-red-600 transition-colors shadow-sm">Reject</button>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

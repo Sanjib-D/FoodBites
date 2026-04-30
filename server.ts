@@ -55,7 +55,7 @@ if (process.env.CLOUDINARY_URL && !process.env.CLOUDINARY_URL.startsWith('cloudi
 }
 
 export async function deleteFromCloudinary(url: string) {
-  if (!url || !url.includes('res.cloudinary.com')) return;
+  if (typeof url !== 'string' || !url.includes('res.cloudinary.com')) return;
   
   try {
     const parts = url.split('/upload/');
@@ -90,7 +90,7 @@ export async function deleteFromCloudinary(url: string) {
 
 // Helper to upload base64 images to Cloudinary
 async function processImagePayload(body: any, fieldName: string) {
-  if (body && body[fieldName] && body[fieldName].startsWith('data:image')) {
+  if (body && typeof body[fieldName] === 'string' && body[fieldName].startsWith('data:image')) {
     if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
        console.error('Cloudinary credentials missing. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.');
        throw new Error('Cloudinary credentials missing in environment.');
@@ -125,7 +125,10 @@ const mockRestaurants = [
     deliveryTime: "25-35 min",
     image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=800",
     tags: ["Burgers", "Fast Food", "American"],
-    status: "approved"
+    status: "approved",
+    mapsUrl: "https://maps.google.com/?q=Burger+Haven+City",
+    address: "123 Burger St, Food City",
+    createdAt: new Date("2026-01-15T12:00:00Z").toISOString(),
   },
   {
     _id: "2",
@@ -193,7 +196,9 @@ const restaurantSchema = new mongoose.Schema({
   tags: [String],
   status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'] },
   email: { type: String, unique: true },
-  password: { type: String }
+  password: { type: String },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 const Restaurant = mongoose.model('Restaurant', restaurantSchema);
 
@@ -384,7 +389,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.get("/api/superadmin/applications", async (req, res) => {
+  app.get("/api/superadmin/applications", authenticate(['superadmin']), async (req: any, res: any) => {
     if (isDbConnected) {
       try {
         const apps = await JobApplication.find().sort({ createdAt: -1 });
@@ -394,7 +399,7 @@ async function startServer() {
     res.json([...mockApplications].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
   });
 
-  app.delete("/api/superadmin/applications/:id", async (req, res) => {
+  app.delete("/api/superadmin/applications/:id", authenticate(['superadmin']), async (req: any, res: any) => {
     if (isDbConnected) {
       try {
         await JobApplication.findByIdAndDelete(req.params.id);
@@ -417,7 +422,7 @@ async function startServer() {
     res.json([...mockJobs].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
   });
 
-  app.post("/api/superadmin/jobs", async (req, res) => {
+  app.post("/api/superadmin/jobs", authenticate(['superadmin']), async (req: any, res: any) => {
     if (isDbConnected) {
       try {
         const job = new Job(req.body);
@@ -432,7 +437,7 @@ async function startServer() {
     res.json({ success: true, job: newJob });
   });
 
-  app.delete("/api/superadmin/jobs/:id", async (req, res) => {
+  app.delete("/api/superadmin/jobs/:id", authenticate(['superadmin']), async (req: any, res: any) => {
     if (isDbConnected) {
       try {
         await Job.findByIdAndDelete(req.params.id);
@@ -447,7 +452,7 @@ async function startServer() {
 
   // Search Route
   app.get("/api/search", async (req, res) => {
-    const q = req.query.q as string || "";
+    const q = typeof req.query.q === 'string' ? req.query.q : "";
     const lowerQ = q.toLowerCase();
     
     let matchedRestaurants = [];
@@ -505,6 +510,18 @@ async function startServer() {
         return res.status(403).json({ error: 'Review customerId mismatch' });
     }
     const reviewData = req.body;
+    
+    // Validate order ownership
+    let orderExists = null;
+    if (isDbConnected) {
+      orderExists = await Order.findById(reviewData.orderId);
+    } else {
+      orderExists = mockOrders.find(o => o._id === reviewData.orderId);
+    }
+    
+    if (!orderExists) return res.status(404).json({ error: "Order not found" });
+    if (String(orderExists.customerId) !== String(req.user.id)) return res.status(403).json({ error: "Order doesn't belong to this customer" });
+    
     if (isDbConnected) {
       try {
         // Simple logic to add a review, could check order validation
@@ -528,6 +545,10 @@ async function startServer() {
   });
 
   app.put("/api/restaurants/:id/reviews/:reviewId/flag", authenticate(['admin', 'superadmin']), async (req: any, res: any) => {
+    if (req.user && req.user.role === 'admin' && String(req.user.restaurantId) !== String(req.params.id)) {
+      return res.status(403).json({ error: "Unauthorized to flag reviews for this restaurant" });
+    }
+
     if (isDbConnected) {
       try {
         const review = await Review.findByIdAndUpdate(req.params.reviewId, { isFlagged: true }, { new: true });
@@ -582,7 +603,15 @@ async function startServer() {
   app.post('/api/auth/admin/register', async (req, res) => {
     try {
       const payload = { ...req.body };
-      if (payload.email) payload.email = payload.email.toLowerCase();
+      delete payload.status;
+      delete payload.rating;
+      delete payload._id;
+      
+      if (payload.email && typeof payload.email === 'string') {
+        payload.email = payload.email.toLowerCase();
+      } else {
+        return res.status(400).json({ error: 'Valid email is required' });
+      }
 
       if (isDbConnected) {
         // Basic check
@@ -599,7 +628,7 @@ async function startServer() {
         if (existing) {
           return res.status(400).json({ error: 'Email already in use' });
         }
-        const newRest = { _id: "rest_" + Date.now(), status: "pending", ...payload };
+        const newRest = { _id: "rest_" + Date.now(), status: "pending", createdAt: new Date(), updatedAt: new Date(), ...payload };
         mockRestaurants.push(newRest);
         const token = jwt.sign({ id: newRest._id, role: "admin", restaurantId: newRest._id }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ success: true, token, restaurantId: newRest._id });
@@ -669,7 +698,11 @@ async function startServer() {
   app.post('/api/customers/register', async (req, res) => {
     try {
       const payload = { ...req.body };
-      if (payload.email) payload.email = payload.email.toLowerCase();
+      if (payload.email && typeof payload.email === 'string') {
+        payload.email = payload.email.toLowerCase();
+      } else {
+        return res.status(400).json({ error: 'Valid email is required' });
+      }
       
       // Initialize addresses array with the provided address
       if (payload.address) {
@@ -972,6 +1005,9 @@ async function startServer() {
   // Validate coupon
   app.post("/api/coupons/validate", async (req, res) => {
     const { code } = req.body;
+    if (typeof code !== 'string' || !code.trim()) {
+      return res.json({ success: false, error: "Invalid coupon" });
+    }
     if (isDbConnected) {
       const coupon = await Coupon.findOne({ code: code.toUpperCase(), active: true });
       if (coupon) return res.json({ success: true, coupon });
@@ -1052,6 +1088,7 @@ async function startServer() {
     // We update the orderData with verified numbers
     const finalOrderData = {
       ...orderData,
+      status: 'Pending',
       subtotal: expectedSubtotal || orderData.subtotal,
       tax: calculatedTax,
       deliveryCharge,
@@ -1267,8 +1304,28 @@ async function startServer() {
     res.json(filteredCustomers);
   });
 
-  app.patch('/api/admin/orders/:id/status', async (req, res) => {
+  app.patch('/api/admin/orders/:id/status', async (req: any, res: any) => {
     const { status } = req.body;
+    let orderOwnerId = null;
+    
+    if (isDbConnected) {
+      try {
+        const orderExists = await Order.findById(req.params.id);
+        if (!orderExists) return res.status(404).json({ error: "Order not found" });
+        orderOwnerId = orderExists.restaurantId;
+      } catch (err) {
+        return res.status(500).json({ error: "Database error" });
+      }
+    } else {
+      const orderExists = mockOrders.find(o => o._id === req.params.id);
+      if (!orderExists) return res.status(404).json({ error: "Order not found" });
+      orderOwnerId = orderExists.restaurantId;
+    }
+    
+    if (req.user && req.user.role === 'admin' && String(orderOwnerId) !== String(req.user.restaurantId)) {
+      return res.status(403).json({ error: "Unauthorized to update this order" });
+    }
+
     if (isDbConnected) {
       try {
         const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
@@ -1316,8 +1373,24 @@ async function startServer() {
     res.json({ success: true, item: newItem });
   });
 
-  app.put('/api/admin/menu/:id', async (req, res) => {
-    if (req.body.image && req.body.image.startsWith('data:image')) {
+  app.put('/api/admin/menu/:id', async (req: any, res: any) => {
+    // Basic auth check
+    if (req.user && req.user.role === 'admin') {
+       let itemExists = null;
+       if (isDbConnected) {
+         itemExists = await MenuItem.findById(req.params.id);
+       } else {
+         for (const [rId, items] of Object.entries(mockMenus)) {
+           const found = items.find((i:any) => i._id === req.params.id);
+           if (found) { itemExists = found; break; }
+         }
+       }
+       if (itemExists && String(itemExists.restaurantId) !== String(req.user.restaurantId)) {
+          return res.status(403).json({ error: "Unauthorized to edit this item" });
+       }
+    }
+
+    if (req.body.image && typeof req.body.image === 'string' && req.body.image.startsWith('data:image')) {
       if (isDbConnected) {
         const oldItem = await MenuItem.findById(req.params.id);
         if (oldItem && oldItem.image) await deleteFromCloudinary(oldItem.image);
@@ -1364,8 +1437,16 @@ async function startServer() {
     }
   });
 
-  app.put('/api/admin/restaurants/:id', async (req, res) => {
-    if (req.body.image && req.body.image.startsWith('data:image')) {
+  app.put('/api/admin/restaurants/:id', async (req: any, res: any) => {
+    if (req.user && req.user.role === 'admin' && String(req.user.restaurantId) !== String(req.params.id)) {
+      return res.status(403).json({ error: 'Unauthorized to edit this restaurant' });
+    }
+    
+    // Prevent mass assignment of sensitive fields
+    delete req.body.status;
+    delete req.body.rating;
+    
+    if (req.body.image && typeof req.body.image === 'string' && req.body.image.startsWith('data:image')) {
       if (isDbConnected) {
         const oldRest = await Restaurant.findById(req.params.id);
         if (oldRest && oldRest.image) await deleteFromCloudinary(oldRest.image);
@@ -1396,7 +1477,22 @@ async function startServer() {
     res.status(404).json({ error: "Restaurant not found" });
   });
 
-  app.delete('/api/admin/menu/:id', async (req, res) => {
+  app.delete('/api/admin/menu/:id', async (req: any, res: any) => {
+    if (req.user && req.user.role === 'admin') {
+       let itemExists = null;
+       if (isDbConnected) {
+         itemExists = await MenuItem.findById(req.params.id);
+       } else {
+         for (const [rId, items] of Object.entries(mockMenus)) {
+           const found = items.find((i:any) => i._id === req.params.id);
+           if (found) { itemExists = found; break; }
+         }
+       }
+       if (itemExists && String(itemExists.restaurantId) !== String(req.user.restaurantId)) {
+          return res.status(403).json({ error: "Unauthorized to delete this item" });
+       }
+    }
+
     if (isDbConnected) {
       try {
         await MenuItem.findByIdAndDelete(req.params.id);

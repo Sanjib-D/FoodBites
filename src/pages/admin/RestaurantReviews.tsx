@@ -29,8 +29,9 @@ export function RestaurantReviews() {
     return () => { isMounted = false; };
   }, []);
 
+  const [confirmFlagId, setConfirmFlagId] = useState<string | null>(null);
+
   const handleFlagReview = async (reviewId: string) => {
-    if (!confirm("Flag this review as inappropriate?")) return;
     try {
       const restId = localStorage.getItem('restaurantId') || '1';
       const token = localStorage.getItem('token');
@@ -41,12 +42,16 @@ export function RestaurantReviews() {
         }
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setReviews(reviews.map(r => r._id === reviewId ? { ...r, isFlagged: true } : r));
-        alert("Review flagged for Super Admin moderation");
+        setConfirmFlagId(null);
+      } else {
+        console.error(data.error);
+        setConfirmFlagId(null);
       }
     } catch (err) {
-      alert("Failed to flag review");
+      console.error(err);
+      setConfirmFlagId(null);
     }
   };
 
@@ -117,14 +122,31 @@ export function RestaurantReviews() {
                 ) : (
                   <div></div>
                 )}
-                <button 
-                  onClick={() => handleFlagReview(review._id)}
-                  disabled={review.isFlagged}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${review.isFlagged ? 'bg-red-500 text-white shadow-sm cursor-not-allowed' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-red-500'}`}
-                >
-                  <Flag className="w-3.5 h-3.5" />
-                  {review.isFlagged ? 'Flagged' : 'Flag'}
-                </button>
+                {confirmFlagId === review._id ? (
+                  <div className="flex items-center gap-1">
+                    <button 
+                      onClick={() => handleFlagReview(review._id)}
+                      className="px-2 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded text-xs font-medium transition-colors"
+                    >
+                      Confirm Flag
+                    </button>
+                    <button 
+                      onClick={() => setConfirmFlagId(null)}
+                      className="px-2 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded text-xs font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => setConfirmFlagId(review._id)}
+                    disabled={review.isFlagged}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${review.isFlagged ? 'bg-red-500 text-white shadow-sm cursor-not-allowed' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-red-500'}`}
+                  >
+                    <Flag className="w-3.5 h-3.5" />
+                    {review.isFlagged ? 'Flagged' : 'Flag'}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -134,12 +156,14 @@ export function RestaurantReviews() {
       <AnimatePresence>
         {selectedOrder && (
           <motion.div 
+            key="order-modal-overlay"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
+            className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50"
           >
             <motion.div 
+              key="order-modal-content"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}

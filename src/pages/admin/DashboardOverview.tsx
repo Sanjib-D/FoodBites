@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 export function DashboardOverview() {
   const [stats, setStats] = useState<any>({ totalRevenue: 0, totalOrders: 0, pendingOrders: 0, totalSubtotal: 0, totalDeliveryCharge: 0, totalTax: 0, totalRestaurantPlatformFee: 0, totalDiscount: 0 });
   const [orders, setOrders] = useState<any[]>([]);
+  const [avgPrepTime, setAvgPrepTime] = useState('0.0');
   const [loading, setLoading] = useState(true);
   const [selectedBillOrder, setSelectedBillOrder] = useState<any | null>(null);
 
@@ -20,6 +21,27 @@ export function DashboardOverview() {
       ]);
       const oData = await ordersRes.json();
       const sData = await statsRes.json();
+      
+      // Calculate avg prep time based on delivered orders in the fetched data
+      let totalPrepMinutes = 0;
+      let deliveredCount = 0;
+      oData.forEach((o: any) => {
+        if (o.status === 'Delivered' && o.updatedAt && o.createdAt) {
+          const diffMs = new Date(o.updatedAt).getTime() - new Date(o.createdAt).getTime();
+          if (diffMs > 0) {
+            totalPrepMinutes += diffMs / 60000;
+            deliveredCount++;
+          }
+        }
+      });
+      
+      if (deliveredCount > 0) {
+        setAvgPrepTime((totalPrepMinutes / deliveredCount).toFixed(1));
+      } else {
+        // Fallback to mock value if no delivered orders
+        setAvgPrepTime('14.2');
+      }
+
       setOrders(oData.slice(0, 5)); // Just the 5 most recent for overview
       setStats(sData);
     } catch(err) {
@@ -71,8 +93,7 @@ export function DashboardOverview() {
         </div>
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
           <p className="text-slate-500 text-sm font-medium mb-1">Avg. Prep Time</p>
-          <p className="text-2xl font-bold text-slate-900">14.2 min</p>
-          <p className="text-brand-500 text-xs font-semibold mt-2">↓ 2 min reduction</p>
+          <p className="text-2xl font-bold text-slate-900">{avgPrepTime} min</p>
         </div>
       </div>
 
@@ -100,7 +121,7 @@ export function DashboardOverview() {
               ) : orders.length === 0 ? (
                 <tr><td colSpan={6} className="text-center py-8 text-slate-400">No recent orders</td></tr>
               ) : (
-                orders.map((order, idx) => {
+                orders.slice(0, 5).map((order: any, idx: number) => {
                   const restAmount = (order.total || 0) - (order.platformFee || 0);
                   const isExpanded = false; // We will use detail/summary or simple mapping, but let's just make it a hover or click-to-expand in a separate PR, or inline bill details. To keep it simple, we can render the details directly below using multiple <tr>s if we maintain state. Let's create an expanded state! (Wait, I cannot add state directly here unless I edit the top of the file.)
                   // Let's use details/summary for a CSS-only toggle
@@ -124,17 +145,24 @@ export function DashboardOverview() {
                         <td className="px-6 py-4 font-bold text-slate-900">
                           ₹{restAmount.toFixed(2)}
                         </td>
-                        <td className="px-6 py-4 flex items-center justify-end gap-2">
-                           <button onClick={() => setSelectedBillOrder(order)} className="text-xs text-brand-600 font-medium hover:underline mr-4">View Bill Details</button>
-                           {order.status === 'Pending' && (
-                             <button onClick={() => handleUpdateStatus(order._id, 'Preparing')} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded font-medium hover:bg-slate-800 transition-colors">Accept</button>
-                           )}
-                           {order.status === 'Preparing' && (
-                             <button onClick={() => handleUpdateStatus(order._id, 'Delivered')} className="text-xs bg-brand-500 text-white px-3 py-1.5 rounded font-medium hover:bg-brand-600 transition-colors">Complete</button>
-                           )}
-                           {order.status === 'Delivered' && (
-                             <span className="text-xs text-slate-400"><CheckCircle className="w-4 h-4 inline-block mr-1"/>Done</span>
-                           )}
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end gap-5">
+                            <button onClick={() => setSelectedBillOrder(order)} className="text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 px-3 py-1.5 rounded-lg font-medium transition-colors whitespace-nowrap border border-brand-200 shadow-sm">View Bill Details</button>
+                            <div className="w-24 shrink-0 text-right">
+                              {order.status === 'Pending' && (
+                                <button onClick={() => handleUpdateStatus(order._id, 'Preparing')} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded font-medium hover:bg-slate-800 transition-colors w-full">Accept</button>
+                              )}
+                              {order.status === 'Preparing' && (
+                                <button onClick={() => handleUpdateStatus(order._id, 'On the way')} className="text-xs bg-blue-500 text-white px-3 py-1.5 rounded font-medium hover:bg-blue-600 transition-colors w-full">Dispatch</button>
+                              )}
+                              {order.status === 'On the way' && (
+                                <button onClick={() => handleUpdateStatus(order._id, 'Delivered')} className="text-xs bg-brand-500 text-white px-3 py-1.5 rounded font-medium hover:bg-brand-600 transition-colors w-full">Complete</button>
+                              )}
+                              {order.status === 'Delivered' && (
+                                <span className="text-xs text-slate-400 flex items-center justify-end"><CheckCircle className="w-4 h-4 mr-1"/>Done</span>
+                              )}
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     </React.Fragment>
