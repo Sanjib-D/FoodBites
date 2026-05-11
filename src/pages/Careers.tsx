@@ -36,11 +36,12 @@ export function Careers() {
     };
 
     try {
-      await fetch('/api/applications', {
+      const res = await fetch('/api/applications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
+      if (!res.ok) throw new Error('Failed to submit');
       setIsSubmitted(true);
       setTimeout(() => {
         setIsSubmitted(false);
