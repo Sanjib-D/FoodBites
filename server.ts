@@ -263,7 +263,7 @@ let mockReviews: any[] = [
 
 const jobApplicationSchema = new mongoose.Schema({
   _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
-  jobId: Number,
+  jobId: String,
   jobTitle: String,
   name: String,
   email: String,
